@@ -1,0 +1,29 @@
+searchyoutube/
+├── .env.local
+├── package.json
+├── tsconfig.json
+├── next.config.ts
+├── public/
+└── src/
+    ├── app/
+    │   ├── api/
+    │   │   ├── auth/
+    │   │   └── search-limit/
+    │   ├── auth/
+    │   │   └── signin/
+    │   ├── profile/
+    │   ├── globals.css
+    │   ├── search/
+    │   ├── layout.tsx
+    │   └── page.tsx
+    ├── components/
+    │   ├── ui/
+    │   ├── auth-provider.tsx
+    │   ├── filter-bar.tsx
+    │   ├── navbar.tsx
+    │   ├── results-table.tsx
+    │   └── search-form.tsx
+    ├── lib/
+    │   ├── utils.ts
+    │   └── youtube.ts
+    └── types/
