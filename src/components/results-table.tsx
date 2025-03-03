@@ -488,7 +488,7 @@ export default function ResultsTable({ results }: ResultsTableProps) {
 
     if (selectedFilters.length === 0) return null;
 
-    return (
+  return (
       <div className="px-4 py-3 bg-pink-50/50 border-t border-pink-100">
         <div className="flex flex-wrap gap-2">
           {selectedFilters.map((filter) => (
@@ -517,8 +517,8 @@ export default function ResultsTable({ results }: ResultsTableProps) {
       <div 
         className="p-4 cursor-pointer flex items-center justify-between hover:bg-pink-50/30 transition-colors duration-200"
         onClick={() => setIsFilterExpanded(!isFilterExpanded)}
-      >
-        <div className="flex items-center">
+            >
+              <div className="flex items-center">
           <h2 className="text-lg font-bold text-gray-800">검색 필터</h2>
           <span className="ml-2 text-sm text-pink-600">
             ({filteredResults.length}개 결과)
@@ -786,7 +786,7 @@ export default function ResultsTable({ results }: ResultsTableProps) {
                     <span className="text-xs">{device}: {percentage}%</span>
                   </div>
                 ))}
-              </div>
+                  </div>
             )}
           </td>
         );
@@ -890,9 +890,9 @@ export default function ResultsTable({ results }: ResultsTableProps) {
                       <span className="text-xs">{country}: {percentage.toFixed(1)}%</span>
                     </div>
                   ))}
-              </div>
-            )}
-          </td>
+                  </div>
+                )}
+              </td>
         );
       case 'demographics':
         return (
@@ -902,8 +902,8 @@ export default function ResultsTable({ results }: ResultsTableProps) {
                 <div>인구통계: {result.demographics.population.toLocaleString()}</div>
                 <div>인구밀도: {result.demographics.populationDensity.toLocaleString()} people/km²</div>
               </div>
-            )}
-          </td>
+                )}
+              </td>
         );
       case 'viewingPatterns':
         return (
@@ -914,13 +914,13 @@ export default function ResultsTable({ results }: ResultsTableProps) {
                 <div>실시간 시청: {result.viewingPatterns.livePercentage.toFixed(1)}%</div>
               </div>
             )}
-          </td>
+              </td>
         );
       case 'contentReach':
         return (
           <td key={col.id} className="px-4 py-4">
             {result.contentReach?.toFixed(1)}%
-          </td>
+                  </td>
         );
       case 'trafficSources':
         return (
@@ -933,8 +933,8 @@ export default function ResultsTable({ results }: ResultsTableProps) {
                   </div>
                 ))}
               </div>
-            )}
-          </td>
+                    )}
+                  </td>
         );
       case 'deviceStats':
         return (
@@ -948,13 +948,13 @@ export default function ResultsTable({ results }: ResultsTableProps) {
                 ))}
               </div>
             )}
-          </td>
+                  </td>
         );
       default:
         return (
           <td key={col.id} className="px-4 py-4">
             {String(result[col.id as keyof YouTubeSearchResult] || '-')}
-          </td>
+                  </td>
         );
     }
   };
@@ -1124,8 +1124,8 @@ export default function ResultsTable({ results }: ResultsTableProps) {
                     className={`hover:bg-pink-50 transition-colors duration-200 ${index % 2 === 0 ? 'bg-white' : 'bg-pink-50/30'}`}
                   >
                     {visibleColumns.map(col => renderCell(result, col))}
-                  </tr>
-                ))}
+            </tr>
+          ))}
               </tbody>
             </table>
           </div>
@@ -1136,7 +1136,7 @@ export default function ResultsTable({ results }: ResultsTableProps) {
           {isLoading && (
             <div className="flex justify-center items-center py-4">
               <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-pink-500"></div>
-            </div>
+                </div>
           )}
           {!isLoading && displayedResults.length < filteredResults.length && (
             <button 
