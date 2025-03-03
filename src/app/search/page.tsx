@@ -5,7 +5,6 @@ import { useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { searchYouTube, type YouTubeSearchResult } from '@/lib/youtube';
 import ResultsTable from '@/components/results-table';
-import FilterBar from '@/components/filter-bar';
 
 interface SearchLimit {
   remainingSearches: number;
@@ -21,9 +20,6 @@ export default function SearchPage() {
   const [results, setResults] = useState<YouTubeSearchResult[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [contentType, setContentType] = useState<'video' | 'channel'>('video');
-  const [sortField, setSortField] = useState<string>('publishedAt');
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   const [searchLimit, setSearchLimit] = useState<SearchLimit | null>(null);
 
   // 검색 제한 정보 가져오기
@@ -103,21 +99,6 @@ export default function SearchPage() {
 
   return (
     <section className="w-full flex flex-col">
-      {/* 필터 바 - 상단에 고정 */}
-      {results.length > 0 && (
-        <div className="sticky top-16 z-30">
-          <FilterBar 
-            contentType={contentType}
-            setContentType={setContentType}
-            sortField={sortField}
-            setSortField={setSortField}
-            sortDirection={sortDirection}
-            setSortDirection={setSortDirection}
-            totalResults={results.length}
-          />
-        </div>
-      )}
-      
       {/* 검색 결과 및 필터 */}
       <div className="w-full flex-grow">
         {/* 에러 메시지 */}
@@ -141,8 +122,7 @@ export default function SearchPage() {
             <div className="container mx-auto max-w-6xl px-4 py-4">
               <div className="bg-white rounded-2xl shadow-lg overflow-hidden border border-pink-100">
                 <ResultsTable 
-                  results={results} 
-                  contentType={contentType} 
+                  results={results}
                 />
               </div>
             </div>
