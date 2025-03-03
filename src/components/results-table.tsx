@@ -499,14 +499,11 @@ export default function ResultsTable({ results }: ResultsTableProps) {
       case 'title':
         return (
           <td key={col.id} className="px-4 py-4">
-            <Link 
-              href={`https://youtube.com/watch?v=${result.id}`} 
-              target="_blank" 
-              className="text-blue-600 hover:text-blue-800 line-clamp-2 block"
-              title={result.title}
-            >
-              {result.title}
-            </Link>
+            <div className="line-clamp-2">
+              <Link href={`https://www.youtube.com/watch?v=${result.id}`} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                {result.title}
+              </Link>
+            </div>
           </td>
         );
       case 'description':
@@ -557,14 +554,38 @@ export default function ResultsTable({ results }: ResultsTableProps) {
           </td>
         );
       case 'viewCount':
-      case 'likeCount':
-      case 'commentCount':
-      case 'shareCount':
-      case 'subscriberCount':
-      case 'videoCount':
         return (
           <td key={col.id} className="px-4 py-4">
-            {formatNumber(result[col.id] as number || 0)}
+            {formatNumber(result.viewCount as number || 0)}
+          </td>
+        );
+      case 'viewChange':
+        return (
+          <td key={col.id} className="px-4 py-4">
+            {result.stats ? (
+              <div className="space-y-1">
+                <div className={`text-sm ${result.stats.views.weekChange >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  1주일: {formatNumber(Math.abs(result.stats.views.weekChange))}
+                  {result.stats.views.weekChange >= 0 ? '↑' : '↓'}
+                </div>
+                <div className={`text-sm ${result.stats.views.monthChange >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  1달: {formatNumber(Math.abs(result.stats.views.monthChange))}
+                  {result.stats.views.monthChange >= 0 ? '↑' : '↓'}
+                </div>
+              </div>
+            ) : '-'}
+          </td>
+        );
+      case 'likeCount':
+        return (
+          <td key={col.id} className="px-4 py-4">
+            {formatNumber(result.likeCount as number || 0)}
+          </td>
+        );
+      case 'commentCount':
+        return (
+          <td key={col.id} className="px-4 py-4">
+            {formatNumber(result.commentCount as number || 0)}
           </td>
         );
       case 'channelTitle':
@@ -573,6 +594,29 @@ export default function ResultsTable({ results }: ResultsTableProps) {
             <Link href={`https://youtube.com/channel/${result.channelId}`} target="_blank" className="text-blue-600 hover:text-blue-800">
               {result.channelTitle}
             </Link>
+          </td>
+        );
+      case 'subscriberCount':
+        return (
+          <td key={col.id} className="px-4 py-4">
+            {formatNumber(result.subscriberCount as number || 0)}
+          </td>
+        );
+      case 'subscriberChange':
+        return (
+          <td key={col.id} className="px-4 py-4">
+            {result.stats ? (
+              <div className="space-y-1">
+                <div className={`text-sm ${result.stats.subscribers.weekChange >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  1주일: {formatNumber(Math.abs(result.stats.subscribers.weekChange))}
+                  {result.stats.subscribers.weekChange >= 0 ? '↑' : '↓'}
+                </div>
+                <div className={`text-sm ${result.stats.subscribers.monthChange >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  1달: {formatNumber(Math.abs(result.stats.subscribers.monthChange))}
+                  {result.stats.subscribers.monthChange >= 0 ? '↑' : '↓'}
+                </div>
+              </div>
+            ) : '-'}
           </td>
         );
       case 'trafficSources':
@@ -763,12 +807,6 @@ export default function ResultsTable({ results }: ResultsTableProps) {
             )}
           </td>
         );
-      case 'subscriberCount':
-        return (
-          <td key={col.id} className="px-4 py-4">
-            {formatNumber(result.subscriberCount as number || 0)}
-          </td>
-        );
       default:
         return (
           <td key={col.id} className="px-4 py-4">
@@ -808,7 +846,7 @@ export default function ResultsTable({ results }: ResultsTableProps) {
     {
       id: 'publishedAt',
       label: '게시일',
-      width: '120px',
+      width: '150px',
       sortable: true,
       field: 'publishedAt'
     },
@@ -839,6 +877,12 @@ export default function ResultsTable({ results }: ResultsTableProps) {
       field: 'viewCount'
     },
     {
+      id: 'viewChange',
+      label: '조회수 변화',
+      width: '150px',
+      sortable: false
+    },
+    {
       id: 'likeCount',
       label: '좋아요',
       width: '100px',
@@ -866,74 +910,9 @@ export default function ResultsTable({ results }: ResultsTableProps) {
       sortable: true,
       field: 'subscriberCount'
     },
-    // 시청자 참여도 지표
     {
-      id: 'engagementRate',
-      label: '참여율',
-      width: '100px',
-      sortable: true,
-      field: 'engagementRate'
-    },
-    {
-      id: 'averageViewDuration',
-      label: '평균시청시간',
-      width: '120px',
-      sortable: true,
-      field: 'averageViewDuration'
-    },
-    {
-      id: 'viewerDropoffRate',
-      label: '이탈률',
-      width: '100px',
-      sortable: true,
-      field: 'viewerDropoffRate'
-    },
-    {
-      id: 'ctr',
-      label: '클릭률',
-      width: '100px',
-      sortable: true,
-      field: 'ctr'
-    },
-    // 지리적 데이터
-    {
-      id: 'geographicStats',
-      label: '국가별분포',
-      width: '150px',
-      sortable: false
-    },
-    // 인구통계학적 데이터
-    {
-      id: 'demographics',
-      label: '인구통계',
-      width: '150px',
-      sortable: false
-    },
-    // 시청 패턴
-    {
-      id: 'viewingPatterns',
-      label: '시청패턴',
-      width: '150px',
-      sortable: false
-    },
-    // 콘텐츠 도달률
-    {
-      id: 'contentReach',
-      label: '도달률',
-      width: '150px',
-      sortable: false
-    },
-    // 트래픽 소스
-    {
-      id: 'trafficSources',
-      label: '트래픽',
-      width: '150px',
-      sortable: false
-    },
-    // 디바이스 통계
-    {
-      id: 'deviceStats',
-      label: '디바이스',
+      id: 'subscriberChange',
+      label: '구독자 변화',
       width: '150px',
       sortable: false
     }

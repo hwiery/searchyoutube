@@ -14,97 +14,38 @@ const YOUTUBE_ANALYTICS_API_BASE_URL = 'https://youtubeanalytics.googleapis.com/
 
 export interface YouTubeSearchResult {
   id: string;
-  type: 'video' | 'channel';
   title: string;
   description: string;
   thumbnailUrl: string;
   publishedAt: string;
   channelId: string;
   channelTitle: string;
-  
-  // 기존 통계
-  viewCount: number;
-  likeCount?: number;
-  commentCount?: number;
-  subscriberCount?: number;
-  videoCount?: number;
-  
-  // 비디오 상세 정보
   duration?: string;
   definition?: string;
   caption?: boolean;
-  licensedContent?: boolean;
-  projection?: string;
-  dimension?: string;
-  
-  // 주제 및 태그
-  topicDetails?: Array<{ name: string; wikiPath: string | null }>;
-  tags?: string[];
-  
-  // 확장된 통계 정보
-  averageViewDuration?: number;
-  estimatedMinutesWatched?: number;
-  viewerPercentage?: number;
+  viewCount: number;
+  likeCount: number;
+  commentCount: number;
   shareCount?: number;
-  
-  // 트래픽 소스 분석
-  trafficSources?: {
-    search?: number;
-    suggested?: number;
-    external?: number;
-    direct?: number;
-    other?: number;
-  };
-  
-  // 시청자 지역 분포 (상위 5개국)
-  geographicStats?: {
-    countries: {
-      [key: string]: number;
+  subscriberCount?: number;
+  videoCount?: number;
+  tags?: string[];
+  topicDetails?: Array<{ name: string; wikiPath: string | null }>;
+  stats?: {
+    views: {
+      current: number;
+      weekAgo: number;
+      monthAgo: number;
+      weekChange: number;
+      monthChange: number;
     };
-  };
-  
-  // 디바이스별 시청 비율
-  deviceStats?: {
-    mobile?: number;
-    desktop?: number;
-    tablet?: number;
-    tv?: number;
-    gamingConsole?: number;
-  };
-  
-  // 성장 지표
-  growthStats?: {
-    viewsGrowth?: number;
-    subscriberGrowth?: number;
-    engagementRate?: number;
-  };
-
-  // 시청자 통계
-  audienceStats?: {
-    ageGroups: {
-      [key: string]: number; // '13-17': 10, '18-24': 25, etc.
+    subscribers: {
+      current: number;
+      weekAgo: number;
+      monthAgo: number;
+      weekChange: number;
+      monthChange: number;
     };
-    genderGroups: {
-      [key: string]: number; // '남성': 60, '여성': 40
-    };
-  };
-
-  // 시청 패턴
-  viewingStats?: {
-    peakViewingTime: string;
-    timeOfDay: {
-      [key: string]: number;
-    };
-    livePercentage: number;
-  };
-
-  // 시청 지속률
-  retentionStats?: {
-    viewerDropoffRate: number;
-    segments: {
-      [key: string]: number;
-    };
-    ctr: number;
   };
 }
 
@@ -271,7 +212,7 @@ export async function searchYouTube(query: string): Promise<YouTubeSearchResult[
     const searchResponse = await fetch(
       `${YOUTUBE_API_BASE_URL}/search?part=snippet&q=${encodeURIComponent(
         query
-      )}&key=${YOUTUBE_API_KEY}&maxResults=50&type=video,channel`
+      )}&key=${YOUTUBE_API_KEY}&maxResults=50&type=video`
     );
     
     if (!searchResponse.ok) {
@@ -285,13 +226,11 @@ export async function searchYouTube(query: string): Promise<YouTubeSearchResult[
     // 결과 매핑 및 추가 데이터 가져오기
     const results = await Promise.all(
       items.map(async (item: any) => {
-        const isVideo = item.id.kind === 'youtube#video';
-        const id = isVideo ? item.id.videoId : item.id.channelId;
+        const videoId = item.id.videoId;
         
         // 기본 정보 구성
         const result: YouTubeSearchResult = {
-          id,
-          type: isVideo ? 'video' : 'channel',
+          id: videoId,
           title: item.snippet.title,
           description: item.snippet.description,
           thumbnailUrl: item.snippet.thumbnails.high?.url || item.snippet.thumbnails.default?.url,
@@ -299,121 +238,66 @@ export async function searchYouTube(query: string): Promise<YouTubeSearchResult[
           channelId: item.snippet.channelId,
           channelTitle: item.snippet.channelTitle,
           viewCount: 0,
+          likeCount: 0,
+          commentCount: 0
         };
 
         try {
-          // 비디오인 경우 상세 정보 가져오기
-          if (isVideo) {
-            const videoResponse = await fetch(
-              `https://www.googleapis.com/youtube/v3/videos?part=statistics,contentDetails,topicDetails,status&id=${id}&key=${YOUTUBE_API_KEY}`
-            );
+          // 비디오 상세 정보 가져오기
+          const videoResponse = await fetch(
+            `${YOUTUBE_API_BASE_URL}/videos?part=statistics,contentDetails,topicDetails,status&id=${videoId}&key=${YOUTUBE_API_KEY}`
+          );
+          
+          if (videoResponse.ok) {
+            const videoData = await videoResponse.json();
+            const videoItem = videoData.items?.[0];
             
-            if (videoResponse.ok) {
-              const videoData = await videoResponse.json();
-              const videoItem = videoData.items?.[0];
+            if (videoItem) {
+              // 통계 정보
+              result.viewCount = parseInt(videoItem.statistics?.viewCount || '0');
+              result.likeCount = parseInt(videoItem.statistics?.likeCount || '0');
+              result.commentCount = parseInt(videoItem.statistics?.commentCount || '0');
               
-              if (videoItem) {
-                // 통계 정보
-                result.viewCount = parseInt(videoItem.statistics?.viewCount || '0');
-                result.likeCount = parseInt(videoItem.statistics?.likeCount || '0');
-                result.commentCount = parseInt(videoItem.statistics?.commentCount || '0');
-                
-                // 콘텐츠 상세
-                result.duration = videoItem.contentDetails?.duration;
-                result.definition = videoItem.contentDetails?.definition;
-                result.caption = videoItem.contentDetails?.caption === 'true';
-                result.licensedContent = videoItem.status?.license === 'youtube';
-                result.dimension = videoItem.contentDetails?.dimension;
-                result.projection = videoItem.contentDetails?.projection;
-                
-                // 주제 상세
-                if (videoItem.topicDetails?.topicCategories) {
-                  result.topicDetails = videoItem.topicDetails.topicCategories.map((topic: string) => {
-                    const name = topic.split('/').pop() || '';
-                    return {
-                      name,
-                      wikiPath: name
-                    };
-                  });
-                }
-
-                // 예상 통계 (공개 API로 접근 가능한 추정치)
-                const durationInSeconds = parseDuration(result.duration || 'PT0S');
-                const averageRetentionRate = 0.4; // 평균 40% 시청 완료율
-                result.averageViewDuration = Math.round(durationInSeconds * averageRetentionRate);
-                result.estimatedMinutesWatched = Math.round((result.viewCount * result.averageViewDuration) / 60);
-                result.viewerPercentage = 100;
-                result.shareCount = Math.round(result.viewCount * 0.02); // 예상치 2%로 조정
-
-                // 트래픽 소스 예상 분포 (실제 데이터에 가깝게 조정)
-                result.trafficSources = {
-                  suggested: 35,
-                  search: 25,
-                  external: 20,
-                  direct: 15,
-                  other: 5
-                };
-
-                // 디바이스별 시청 예상 비율 (게이밍 콘솔 제외)
-                result.deviceStats = {
-                  mobile: 55,
-                  desktop: 30,
-                  tablet: 8,
-                  tv: 7
-                };
-
-                // 성장 지표 (7일 기준)
-                const publishedDate = new Date(result.publishedAt);
-                const now = new Date();
-                const daysSincePublished = Math.floor((now.getTime() - publishedDate.getTime()) / (1000 * 60 * 60 * 24));
-                
-                if (daysSincePublished <= 30) {
-                  // 30일 이내 컨텐츠의 경우 더 높은 성장률
-                  const dailyViews = result.viewCount / (daysSincePublished || 1);
-                  const weeklyViews = dailyViews * 7;
-                  const viewsGrowth = (weeklyViews / result.viewCount) * 100;
-                  
-                  result.growthStats = {
-                    viewsGrowth: Math.min(viewsGrowth, 100), // 최대 100%로 제한
-                    subscriberGrowth: Math.min(viewsGrowth * 0.1, 20), // 조회수 성장의 10%, 최대 20%로 제한
-                    engagementRate: ((result.likeCount + (result.commentCount || 0)) / result.viewCount) * 100
-                  };
-                } else {
-                  // 30일 이후 컨텐츠의 경우 더 낮은 성장률
-                  result.growthStats = {
-                    viewsGrowth: Math.random() * 2 + 0.5, // 0.5% ~ 2.5%
-                    subscriberGrowth: Math.random() * 1 + 0.2, // 0.2% ~ 1.2%
-                    engagementRate: ((result.likeCount + (result.commentCount || 0)) / result.viewCount) * 100
-                  };
-                }
-              }
-            }
-          } else {
-            // 채널인 경우 상세 정보 가져오기
-            const channelResponse = await fetch(
-              `https://www.googleapis.com/youtube/v3/channels?part=statistics&id=${id}&key=${YOUTUBE_API_KEY}`
-            );
-            
-            if (channelResponse.ok) {
-              const channelData = await channelResponse.json();
-              const channelItem = channelData.items?.[0];
+              // 콘텐츠 상세
+              result.duration = videoItem.contentDetails?.duration;
+              result.definition = videoItem.contentDetails?.definition;
+              result.caption = videoItem.contentDetails?.caption === 'true';
               
-              if (channelItem) {
-                result.viewCount = parseInt(channelItem.statistics?.viewCount || '0');
-                result.subscriberCount = parseInt(channelItem.statistics?.subscriberCount || '0');
-                result.videoCount = parseInt(channelItem.statistics?.videoCount || '0');
+              // 주제 상세
+              if (videoItem.topicDetails?.topicCategories) {
+                result.topicDetails = videoItem.topicDetails.topicCategories.map((topic: string) => {
+                  const name = topic.split('/').pop() || '';
+                  return {
+                    name,
+                    wikiPath: name
+                  };
+                });
               }
             }
           }
-        } catch (error) {
-          console.error(`Error fetching additional data for ${id}:`, error);
-        }
 
-        // 새로운 통계 데이터 추가
-        result.audienceStats = generateAudienceStats();
-        result.geographicStats = generateGeographicStats();
-        result.viewingStats = generateViewingStats();
-        result.retentionStats = generateRetentionStats();
+          // 채널 구독자 수 가져오기
+          const channelResponse = await fetch(
+            `${YOUTUBE_API_BASE_URL}/channels?part=statistics&id=${result.channelId}&key=${YOUTUBE_API_KEY}`
+          );
+          
+          if (channelResponse.ok) {
+            const channelData = await channelResponse.json();
+            const channelItem = channelData.items?.[0];
+            
+            if (channelItem) {
+              result.subscriberCount = parseInt(channelItem.statistics?.subscriberCount || '0');
+              result.videoCount = parseInt(channelItem.statistics?.videoCount || '0');
+            }
+          }
+
+          // 통계 데이터 가져오기
+          const stats = await getVideoAndChannelStats(videoId, result.channelId);
+          result.stats = stats;
+
+        } catch (error) {
+          console.error(`Error fetching additional data for ${videoId}:`, error);
+        }
 
         return result;
       })
@@ -423,6 +307,57 @@ export async function searchYouTube(query: string): Promise<YouTubeSearchResult[
   } catch (error) {
     console.error('Error searching YouTube:', error);
     throw error;
+  }
+}
+
+// 비디오와 채널 통계를 가져오는 함수
+async function getVideoAndChannelStats(videoId: string, channelId: string) {
+  try {
+    // 현재 날짜와 1주일 전, 1달 전 날짜 계산
+    const now = new Date();
+    const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+    // 비디오 통계 가져오기
+    const videoResponse = await fetch(
+      `${YOUTUBE_API_BASE_URL}/videos?part=statistics&id=${videoId}&key=${YOUTUBE_API_KEY}`
+    );
+    const videoData = await videoResponse.json();
+    const currentViews = parseInt(videoData.items?.[0]?.statistics?.viewCount || '0');
+
+    // 채널 통계 가져오기
+    const channelResponse = await fetch(
+      `${YOUTUBE_API_BASE_URL}/channels?part=statistics&id=${channelId}&key=${YOUTUBE_API_KEY}`
+    );
+    const channelData = await channelResponse.json();
+    const currentSubscribers = parseInt(channelData.items?.[0]?.statistics?.subscriberCount || '0');
+
+    // 예시 데이터 (실제로는 YouTube Analytics API를 사용해야 함)
+    // 현재는 예시 데이터를 생성합니다
+    const weekAgoViews = Math.floor(currentViews * 0.9); // 10% 감소 가정
+    const monthAgoViews = Math.floor(currentViews * 0.8); // 20% 감소 가정
+    const weekAgoSubscribers = Math.floor(currentSubscribers * 0.95); // 5% 감소 가정
+    const monthAgoSubscribers = Math.floor(currentSubscribers * 0.9); // 10% 감소 가정
+
+    return {
+      views: {
+        current: currentViews,
+        weekAgo: weekAgoViews,
+        monthAgo: monthAgoViews,
+        weekChange: currentViews - weekAgoViews,
+        monthChange: currentViews - monthAgoViews
+      },
+      subscribers: {
+        current: currentSubscribers,
+        weekAgo: weekAgoSubscribers,
+        monthAgo: monthAgoSubscribers,
+        weekChange: currentSubscribers - weekAgoSubscribers,
+        monthChange: currentSubscribers - monthAgoSubscribers
+      }
+    };
+  } catch (error) {
+    console.error('통계 데이터 가져오기 실패:', error);
+    return null;
   }
 }
 
