@@ -1,10 +1,6 @@
 {
-  "framework": "nextjs",
-  "env": {
-    "YOUTUBE_API_KEY": "${YOUTUBE_API_KEY}",
-    "NEXTAUTH_URL": "${NEXTAUTH_URL}",
-    "NEXTAUTH_SECRET": "${NEXTAUTH_SECRET}",
-    "GOOGLE_CLIENT_ID": "${GOOGLE_CLIENT_ID}",
-    "GOOGLE_CLIENT_SECRET": "${GOOGLE_CLIENT_SECRET}"
-  }
+  "version": 2,
+  "buildCommand": "npm run build",
+  "installCommand": "npm install",
+  "framework": "nextjs"
 } 

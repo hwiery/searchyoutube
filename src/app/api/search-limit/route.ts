@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
-import { authOptions } from '../auth/[...nextauth]/route';
+import { authOptions } from '@/lib/auth';
 
 // 환경 변수 로깅
 console.log('NextAuth Secret:', process.env.NEXTAUTH_SECRET ? '설정됨' : '설정되지 않음');

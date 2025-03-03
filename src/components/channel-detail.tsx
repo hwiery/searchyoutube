@@ -171,11 +171,12 @@ export default function ChannelDetail({ channelDetail }: ChannelDetailProps) {
                 <div className="flex flex-col">
                   <span className="text-2xl font-bold text-gray-800">{channelDetail.recentStats?.estimatedRevenue}</span>
                   <div className="flex items-center mt-1 text-sm">
-                    {renderArrow(channelDetail.recentStats?.revenueChange.includes('+'))}
+                    {renderArrow(channelDetail.recentStats?.revenueChange ? channelDetail.recentStats.revenueChange.includes('+') : false)}
                     <span className={`${
-                      channelDetail.recentStats?.revenueChange.includes('+') 
+                      channelDetail.recentStats?.revenueChange ? channelDetail.recentStats.revenueChange.includes('+') 
                         ? 'text-green-600' 
                         : 'text-red-600'
+                      : 'text-gray-600'
                     }`}>
                       {channelDetail.recentStats?.revenueChange}
                     </span>

@@ -31,6 +31,43 @@ export interface YouTubeSearchResult {
   videoCount?: number;
   tags?: string[];
   topicDetails?: Array<{ name: string; wikiPath: string | null }>;
+  trafficSources?: Record<string, number>;
+  deviceStats?: Record<string, number>;
+  engagementRate?: number;
+  averageViewDuration?: number;
+  viewerDropoffRate?: number;
+  ctr?: number;
+  contentReach?: number;
+  demographics?: {
+    population: number;
+    populationDensity: number;
+    medianAge: number;
+    urbanPopulation: number;
+  };
+  viewingPatterns?: {
+    peakViewingTime: string;
+    livePercentage: number;
+    subscribedPercentage: number;
+    repeatViewPercentage: number;
+  };
+  growthStats?: {
+    viewsGrowth?: number;
+    engagementRate?: number;
+    subscriberGrowth?: number;
+  };
+  retentionStats?: {
+    viewerDropoffRate: number;
+    ctr: number;
+    avgViewDuration: string;
+  };
+  geographicStats?: {
+    countries: Record<string, number>;
+  };
+  viewingStats?: {
+    peakViewingTime: string;
+    livePercentage: number;
+    subscribedPercentage: number;
+  };
   stats?: {
     views: {
       current: number;
@@ -357,7 +394,7 @@ async function getVideoAndChannelStats(videoId: string, channelId: string) {
     };
   } catch (error) {
     console.error('통계 데이터 가져오기 실패:', error);
-    return null;
+    return undefined;
   }
 }
 
