@@ -9,20 +9,23 @@ const YOUTUBE_ANALYTICS_API_BASE_URL = 'https://youtubeanalytics.googleapis.com/
 
 export interface YouTubeSearchResult {
   id: string;
+  type: 'video' | 'channel';
+  thumbnailUrl: string;
   title: string;
   description: string;
-  thumbnailUrl: string;
   publishedAt: string;
-  channelId?: string;
-  channelTitle?: string;
-  viewCount?: number;
+  topicDetails?: Array<{ name: string; wikiPath: string | null }>;
+  tags?: string[];
+  duration?: string;
+  definition?: string;
+  caption?: boolean;
+  viewCount: number;
+  likeCount?: number;
+  commentCount?: number;
+  channelId: string;
+  channelTitle: string;
   subscriberCount?: number;
   videoCount?: number;
-  type: 'video' | 'channel';
-  recentViewsGrowth?: string;
-  estimatedRevenue?: string;
-  engagementRate?: string;
-  averageViewDuration?: string;
 }
 
 export interface YouTubeSearchResponse {
@@ -93,9 +96,37 @@ export interface YouTubeChannelDetail {
   };
 }
 
+// 주제 카테고리 매핑
+const topicCategories: { [key: string]: { name: string; wikiPath: string } } = {
+  '/m/04rlf': { name: '음악', wikiPath: 'Music' },
+  '/m/05fw6t': { name: '영화', wikiPath: 'Film' },
+  '/m/02jjt': { name: '엔터테인먼트', wikiPath: 'Entertainment' },
+  '/m/019_rr': { name: '방송', wikiPath: 'Broadcasting' },
+  '/m/032tl': { name: '스포츠', wikiPath: 'Sport' },
+  '/m/027x7n': { name: '교육', wikiPath: 'Education' },
+  '/m/02wbm': { name: '라이프스타일', wikiPath: 'Lifestyle_(sociology)' },
+  '/m/098wr': { name: '게임', wikiPath: 'Game' },
+  '/m/01k8wb': { name: '기술', wikiPath: 'Technology' },
+  '/m/09s1f': { name: '비즈니스', wikiPath: 'Business' },
+  '/m/07c1v': { name: '기술과 과학', wikiPath: 'Science_and_technology' },
+  '/m/01h6rj': { name: '뉴스', wikiPath: 'News' },
+  '/m/02jx1': { name: '푸드', wikiPath: 'Food' },
+  '/m/07bxq': { name: '여행', wikiPath: 'Travel' },
+  '/m/041xxh': { name: '애완동물', wikiPath: 'Pet' },
+  '/m/07yv9': { name: '차량', wikiPath: 'Vehicle' },
+  '/m/03glg': { name: '취미', wikiPath: 'Hobby' },
+  '/m/06ntj': { name: '스포츠', wikiPath: 'Sport' },
+  '/m/02vxn': { name: '코미디', wikiPath: 'Comedy' }
+};
+
+// 주제 ID를 한글 카테고리로 변환하는 함수
+function convertTopicToCategory(topicId: string): { name: string; wikiPath: string | null } {
+  const category = topicCategories[topicId];
+  return category || { name: topicId, wikiPath: null };
+}
+
 export async function searchYouTube(query: string): Promise<YouTubeSearchResult[]> {
   try {
-    // API 키 확인
     if (!YOUTUBE_API_KEY) {
       console.error('YouTube API 키가 설정되지 않았습니다.');
       throw new Error('YouTube API 키가 설정되지 않았습니다.');
@@ -106,7 +137,7 @@ export async function searchYouTube(query: string): Promise<YouTubeSearchResult[
       params: {
         part: 'snippet',
         q: query,
-        maxResults: 10,
+        maxResults: 50,
         type: 'video,channel',
         key: YOUTUBE_API_KEY,
       },
@@ -116,97 +147,98 @@ export async function searchYouTube(query: string): Promise<YouTubeSearchResult[
       return [];
     }
 
+    // 비디오 ID와 채널 ID 목록 추출
+    const videoIds = data.items
+      .filter((item: any) => item.id.kind === 'youtube#video')
+      .map((item: any) => item.id.videoId);
+    
+    const channelIds = data.items.map((item: any) => 
+      item.id.kind === 'youtube#channel' ? item.id.channelId : item.snippet.channelId
+    );
+
+    // 비디오 상세 정보 가져오기
+    const videoDetails = await Promise.all(
+      videoIds.map(async (videoId: string) => {
+        const { data } = await axios.get(`${YOUTUBE_API_BASE_URL}/videos`, {
+          params: {
+            part: 'snippet,contentDetails,statistics,status,topicDetails,recordingDetails',
+            id: videoId,
+            key: YOUTUBE_API_KEY,
+          },
+        });
+        return data.items[0];
+      })
+    );
+
+    // 채널 상세 정보 가져오기
+    const channelDetails = await Promise.all(
+      Array.from(new Set(channelIds)).map(async (channelId: string) => {
+        const { data } = await axios.get(`${YOUTUBE_API_BASE_URL}/channels`, {
+          params: {
+            part: 'snippet,statistics',
+            id: channelId,
+            key: YOUTUBE_API_KEY,
+          },
+        });
+        return data.items[0];
+      })
+    );
+
     // 검색 결과 변환
     const results: YouTubeSearchResult[] = data.items.map((item: any) => {
       const isChannel = item.id.kind === 'youtube#channel';
+      const videoDetail = videoDetails.find((v: any) => v?.id === item.id.videoId);
+      const channelDetail = channelDetails.find((c: any) => 
+        c?.id === (isChannel ? item.id.channelId : item.snippet.channelId)
+      );
       
-      return {
+      const result: YouTubeSearchResult = {
         id: isChannel ? item.id.channelId : item.id.videoId,
+        type: isChannel ? 'channel' : 'video',
+        thumbnailUrl: item.snippet.thumbnails.high?.url || item.snippet.thumbnails.default?.url,
         title: item.snippet.title,
         description: item.snippet.description,
-        thumbnailUrl: item.snippet.thumbnails.high?.url || item.snippet.thumbnails.default?.url,
         publishedAt: item.snippet.publishedAt,
         channelId: isChannel ? item.id.channelId : item.snippet.channelId,
         channelTitle: isChannel ? item.snippet.title : item.snippet.channelTitle,
-        type: isChannel ? 'channel' : 'video',
+        viewCount: parseInt(isChannel 
+          ? channelDetail?.statistics?.viewCount || '0'
+          : videoDetail?.statistics?.viewCount || '0', 10),
+        
+        // 채널 통계
+        ...(isChannel && channelDetail?.statistics && {
+          subscriberCount: parseInt(channelDetail.statistics.subscriberCount || '0', 10),
+          videoCount: parseInt(channelDetail.statistics.videoCount || '0', 10)
+        }),
+        
+        // 비디오 상세 정보
+        ...(videoDetail && {
+          duration: videoDetail.contentDetails?.duration,
+          definition: videoDetail.contentDetails?.definition,
+          caption: videoDetail.contentDetails?.caption !== 'false',
+          license: videoDetail.status?.license,
+          embeddable: videoDetail.status?.embeddable,
+          topicDetails: videoDetail.topicDetails?.topicCategories
+            ?.map((topic: string) => {
+              const topicId = '/m/' + (topic.split('/').pop() || '');
+              return convertTopicToCategory(topicId);
+            })
+            .filter((category: { name: string; wikiPath: string | null }) => category.name !== '') || [],
+          tags: videoDetail.snippet?.tags || [],
+          likeCount: parseInt(videoDetail.statistics?.likeCount || '0', 10),
+          commentCount: parseInt(videoDetail.statistics?.commentCount || '0', 10),
+          location: videoDetail.recordingDetails?.location && {
+            latitude: videoDetail.recordingDetails.location.latitude,
+            longitude: videoDetail.recordingDetails.location.longitude,
+            description: videoDetail.recordingDetails.locationDescription || ''
+          }
+        })
       };
-    });
 
-    // 채널 ID와 비디오 ID 추출
-    const channelIds = results
-      .filter(item => item.type === 'channel')
-      .map(item => item.id);
-    
-    // 검색 결과에 포함된 모든 채널 ID 수집 (비디오의 채널 ID 포함)
-    const videoChannelIds = results
-      .filter(item => item.type === 'video' && item.channelId)
-      .map(item => item.channelId as string);
-    
-    // 중복 제거하여 모든 채널 ID 목록 생성
-    const allChannelIds = [...new Set([...channelIds, ...videoChannelIds])];
-    
-    const videoIds = results
-      .filter(item => item.type === 'video')
-      .map(item => item.id);
-
-    // 채널 및 비디오 통계 정보 가져오기
-    let channelStats: any[] = [];
-    let videoStats: any[] = [];
-    let analyticsData: any = {};
-
-    if (allChannelIds.length > 0) {
-      channelStats = await getChannelStats(allChannelIds);
-      // Analytics API를 통해 채널 분석 데이터 가져오기
-      analyticsData = await getChannelAnalytics(allChannelIds);
-    }
-
-    if (videoIds.length > 0) {
-      videoStats = await getVideoStats(videoIds);
-    }
-
-    // 결과에 통계 정보 추가
-    return results.map(result => {
-      if (result.type === 'channel') {
-        const channelStat = channelStats.find((stat: any) => stat.id === result.id);
-        if (channelStat && channelStat.statistics) {
-          result.subscriberCount = parseInt(channelStat.statistics.subscriberCount || '0', 10);
-          result.videoCount = parseInt(channelStat.statistics.videoCount || '0', 10);
-        }
-        
-        // Analytics 데이터 추가
-        if (analyticsData[result.id]) {
-          const analytics = analyticsData[result.id];
-          result.recentViewsGrowth = analytics.recentViewsGrowth;
-          result.estimatedRevenue = analytics.estimatedRevenue;
-          result.engagementRate = analytics.engagementRate;
-          result.averageViewDuration = analytics.averageViewDuration;
-        }
-      } else if (result.type === 'video') {
-        const videoStat = videoStats.find((stat: any) => stat.id === result.id);
-        if (videoStat && videoStat.statistics) {
-          result.viewCount = parseInt(videoStat.statistics.viewCount || '0', 10);
-        }
-        
-        // 비디오의 채널 정보도 추가
-        if (result.channelId) {
-          const channelStat = channelStats.find((stat: any) => stat.id === result.channelId);
-          if (channelStat && channelStat.statistics) {
-            result.subscriberCount = parseInt(channelStat.statistics.subscriberCount || '0', 10);
-            result.videoCount = parseInt(channelStat.statistics.videoCount || '0', 10);
-          }
-          
-          // 채널의 Analytics 데이터 추가
-          if (analyticsData[result.channelId]) {
-            const analytics = analyticsData[result.channelId];
-            result.recentViewsGrowth = analytics.recentViewsGrowth;
-            result.estimatedRevenue = analytics.estimatedRevenue;
-            result.engagementRate = analytics.engagementRate;
-            result.averageViewDuration = analytics.averageViewDuration;
-          }
-        }
-      }
       return result;
     });
+
+    return results;
   } catch (error) {
     console.error('YouTube API 검색 오류:', error);
     return [];
@@ -430,15 +462,27 @@ function calculateDuration(publishedAt: string): string {
 // 숫자 포맷팅 함수
 function formatNumber(num: number): string {
   if (num >= 1000000000) {
-    return (num / 1000000000).toFixed(1) + 'B';
+    return (num / 1000000000).toFixed(1).replace(/\.0$/, '') + 'B';
   }
   if (num >= 1000000) {
-    return (num / 1000000).toFixed(1) + 'M';
+    return (num / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
   }
   if (num >= 1000) {
-    return (num / 1000).toFixed(1) + 'K';
+    return (num / 1000).toFixed(1).replace(/\.0$/, '') + 'K';
   }
   return num.toString();
+}
+
+// ISO 8601 기간 문자열을 초 단위로 변환하는 함수
+function parseDuration(duration: string): number {
+  const matches = duration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+  if (!matches) return 0;
+  
+  const hours = parseInt(matches[1] || '0', 10);
+  const minutes = parseInt(matches[2] || '0', 10);
+  const seconds = parseInt(matches[3] || '0', 10);
+  
+  return hours * 3600 + minutes * 60 + seconds;
 }
 
 // YouTube Analytics API를 통해 채널 분석 데이터 가져오기
@@ -498,4 +542,50 @@ function getRandomViewDuration(): string {
   const minutes = Math.floor(Math.random() * 10) + 1;
   const seconds = Math.floor(Math.random() * 60);
   return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+}
+
+// 국가 랜덤 생성 함수
+function getRandomCountry(): string {
+  const countries = ['미국', '한국', '일본', '영국', '캐나다', '호주', '독일', '프랑스', '스페인', '이탈리아'];
+  return countries[Math.floor(Math.random() * countries.length)];
+}
+
+// 일별 통계 생성 함수
+function generateDailyStats(days: number): Array<{
+  date: string;
+  subsChange: number;
+  subsTotal: number;
+  viewsChange: number;
+  viewsTotal: number;
+  revenueRange: string;
+}> {
+  const stats = [];
+  const now = new Date();
+  let subsTotal = Math.floor(Math.random() * 50) * 1000000;
+  let viewsTotal = Math.floor(Math.random() * 20) * 1000000000;
+  
+  for (let i = 0; i < days; i++) {
+    const date = new Date(now);
+    date.setDate(date.getDate() - i);
+    
+    const subsChange = Math.random() > 0.7 ? Math.floor(Math.random() * 200000) : 0;
+    const viewsChange = Math.random() > 0.3 ? Math.floor(Math.random() * 30000000) : 0;
+    
+    subsTotal += subsChange;
+    viewsTotal += viewsChange;
+    
+    const minRevenue = (viewsChange * 0.0002).toFixed(1);
+    const maxRevenue = (viewsChange * 0.0006).toFixed(1);
+    
+    stats.push({
+      date: `${date.getFullYear()}/${(date.getMonth() + 1).toString().padStart(2, '0')}/${date.getDate().toString().padStart(2, '0')}`,
+      subsChange,
+      subsTotal,
+      viewsChange,
+      viewsTotal,
+      revenueRange: viewsChange > 0 ? `$${minRevenue}K - $${maxRevenue}K` : '-'
+    });
+  }
+  
+  return stats;
 } 

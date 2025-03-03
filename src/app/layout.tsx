@@ -1,11 +1,14 @@
-import type { Metadata } from 'next';
 import './globals.css';
+import type { Metadata } from 'next';
+import { Inter } from 'next/font/google';
 import Navbar from '@/components/navbar';
-import { AuthProvider } from '@/components/auth-provider';
+import AuthProvider from '@/components/auth-provider';
+
+const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'YouTube Content Search',
-  description: 'Search for YouTube videos and channels',
+  title: 'YouTube 검색 및 분석',
+  description: '유튜브 채널과 동영상을 상세하게 검색하고 분석하세요.',
 };
 
 export default function RootLayout({
@@ -15,12 +18,12 @@ export default function RootLayout({
 }) {
   return (
     <html lang="ko">
-      <body className="min-h-screen bg-gradient-to-b from-purple-50 to-pink-50">
+      <body className={inter.className}>
         <AuthProvider>
-          <div className="flex flex-col min-h-screen">
-            <Navbar />
-            <main className="flex-grow">{children}</main>
-          </div>
+          <Navbar />
+          <main className="min-h-screen bg-gradient-to-b from-white to-pink-50">
+            {children}
+          </main>
         </AuthProvider>
       </body>
     </html>

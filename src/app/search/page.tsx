@@ -4,7 +4,6 @@ import React, { useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { searchYouTube, type YouTubeSearchResult } from '@/lib/youtube';
-import SearchForm from '@/components/search-form';
 import ResultsTable from '@/components/results-table';
 import FilterBar from '@/components/filter-bar';
 
@@ -22,7 +21,7 @@ export default function SearchPage() {
   const [results, setResults] = useState<YouTubeSearchResult[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [contentType, setContentType] = useState<'all' | 'video' | 'channel'>('all');
+  const [contentType, setContentType] = useState<'video' | 'channel'>('video');
   const [sortField, setSortField] = useState<string>('publishedAt');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   const [searchLimit, setSearchLimit] = useState<SearchLimit | null>(null);
@@ -102,48 +101,28 @@ export default function SearchPage() {
     }
   }, [query]);
 
-  // 검색 핸들러
-  const handleSearch = (searchQuery: string) => {
-    if (searchQuery.trim() === query.trim()) {
-      // 같은 검색어로 다시 검색
-      fetchResults();
-    } else {
-      // URL 업데이트
-      const url = new URL(window.location.href);
-      url.searchParams.set('q', searchQuery);
-      window.history.pushState({}, '', url.toString());
-      
-      // 검색 실행
-      fetchResults();
-    }
-  };
-
   return (
     <section className="w-full flex flex-col">
-      {/* 검색 폼 바 */}
-      <div className="w-full bg-gradient-to-r from-pink-100 to-purple-100 sticky top-16 z-40">
-        <SearchForm 
-          initialQuery={query} 
-          onSearch={handleSearch} 
-          isLoading={isLoading} 
-        />
-      </div>
+      {/* 필터 바 - 상단에 고정 */}
+      {results.length > 0 && (
+        <div className="sticky top-16 z-30">
+          <FilterBar 
+            contentType={contentType}
+            setContentType={setContentType}
+            sortField={sortField}
+            setSortField={setSortField}
+            sortDirection={sortDirection}
+            setSortDirection={setSortDirection}
+            totalResults={results.length}
+          />
+        </div>
+      )}
       
       {/* 검색 결과 및 필터 */}
       <div className="w-full flex-grow">
-        {/* 검색 제한 정보 */}
-        {searchLimit && (
-          <div className="flex justify-center my-4">
-            <div className="bg-white px-4 py-2 rounded-full text-sm text-gray-600 shadow-sm border border-pink-100 flex items-center">
-              <span className="font-medium mr-1">남은 검색 횟수:</span> 
-              <span className="text-pink-600 font-bold">{searchLimit.remainingSearches}/{searchLimit.totalLimit}</span>
-            </div>
-          </div>
-        )}
-        
         {/* 에러 메시지 */}
         {error && (
-          <div className="container mx-auto max-w-6xl px-4">
+          <div className="container mx-auto max-w-6xl px-4 mt-4">
             <div className="bg-red-50 border border-red-200 text-red-600 px-6 py-4 rounded-2xl shadow-md mb-6 text-center">
               <p>{error}</p>
               {error.includes('로그인') && (
@@ -158,21 +137,8 @@ export default function SearchPage() {
         {/* 검색 결과 */}
         {results.length > 0 ? (
           <div className="w-full">
-            {/* 필터 바 */}
-            <div className="sticky top-[104px] z-30">
-              <FilterBar 
-                contentType={contentType}
-                setContentType={setContentType}
-                sortField={sortField}
-                setSortField={setSortField}
-                sortDirection={sortDirection}
-                setSortDirection={setSortDirection}
-                totalResults={results.length}
-              />
-            </div>
-            
             {/* 결과 테이블 */}
-            <div className="container mx-auto max-w-6xl px-4 py-6">
+            <div className="container mx-auto max-w-6xl px-4 py-4">
               <div className="bg-white rounded-2xl shadow-lg overflow-hidden border border-pink-100">
                 <ResultsTable 
                   results={results} 
@@ -197,7 +163,7 @@ export default function SearchPage() {
               <div className="bg-white p-8 rounded-2xl shadow-md inline-block max-w-md border border-pink-100">
                 <div className="icon icon-search h-16 w-16 text-pink-300 mx-auto mb-4"></div>
                 <h3 className="text-xl font-bold text-gray-700 mb-2">YouTube 검색</h3>
-                <p className="text-gray-600">위의 검색창에 검색어를 입력하여 시작하세요.</p>
+                <p className="text-gray-600">상단 검색창에 검색어를 입력하여 시작하세요.</p>
               </div>
             </div>
           </div>

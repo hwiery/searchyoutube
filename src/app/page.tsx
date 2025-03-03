@@ -1,5 +1,5 @@
 import { Metadata } from 'next';
-import HomeClient from '@/components/home-client';
+import { redirect } from 'next/navigation';
 
 export const metadata: Metadata = {
   title: 'YouTube 컨텐츠 검색',
@@ -7,5 +7,5 @@ export const metadata: Metadata = {
 };
 
 export default function Home() {
-  return <HomeClient />;
+  redirect('/search');
 } 

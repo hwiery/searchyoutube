@@ -3,8 +3,8 @@
 import React from 'react';
 
 interface FilterBarProps {
-  contentType: 'all' | 'video' | 'channel';
-  setContentType: (type: 'all' | 'video' | 'channel') => void;
+  contentType: 'video' | 'channel';
+  setContentType: (type: 'video' | 'channel') => void;
   sortField: string;
   setSortField: (field: string) => void;
   sortDirection: 'asc' | 'desc';
@@ -21,88 +21,83 @@ export default function FilterBar({
   setSortDirection,
   totalResults
 }: FilterBarProps) {
-  const handleSortChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    setSortField(e.target.value);
-  };
+  // 정렬 필드 옵션
+  const sortOptions = [
+    { value: 'publishedAt', label: '게시일' },
+    { value: 'viewCount', label: '조회수' },
+    { value: 'subscriberCount', label: '구독자 수' },
+    { value: 'videoCount', label: '동영상 수' },
+    { value: 'viewsGrowth', label: '조회수 성장률' },
+    { value: 'subscriberGrowth', label: '구독자 성장률' }
+  ];
 
-  const toggleSortDirection = () => {
-    setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
-  };
+  // 콘텐츠 타입에 따라 필터링된 정렬 옵션
+  const filteredSortOptions = sortOptions.filter(option => {
+    if (contentType === 'video') {
+      return !['subscriberCount', 'videoCount', 'subscriberGrowth'].includes(option.value);
+    }
+    return true;
+  });
 
   return (
-    <div className="w-full bg-gradient-to-r from-purple-50 to-pink-50 border-b border-pink-100 shadow-sm py-3">
-      <div className="container mx-auto">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 px-4">
-          <div className="flex-shrink-0 flex items-center">
-            <p className="text-gray-600 text-sm font-medium mr-4">검색 결과: <span className="font-bold text-pink-600">{totalResults}개</span></p>
-            <div className="flex flex-wrap gap-2 bg-white px-2 py-1 rounded-full shadow-inner border border-pink-100">
-              <button
-                onClick={() => setContentType('all')}
-                className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all duration-300 ${
-                  contentType === 'all'
-                    ? 'bg-gradient-to-r from-red-400 to-pink-400 text-white shadow-md'
-                    : 'text-gray-700 hover:bg-pink-100'
-                }`}
-              >
-                전체
-              </button>
+    <div className="w-full bg-white border-b border-pink-200 shadow-sm">
+      <div className="container mx-auto px-4 py-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          {/* 콘텐츠 타입 필터 */}
+          <div className="flex items-center space-x-4">
+            <div className="flex items-center space-x-2 bg-pink-50 rounded-full p-1">
               <button
                 onClick={() => setContentType('video')}
-                className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all duration-300 ${
+                className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all duration-200 ${
                   contentType === 'video'
-                    ? 'bg-gradient-to-r from-red-400 to-pink-400 text-white shadow-md'
-                    : 'text-gray-700 hover:bg-pink-100'
+                    ? 'bg-gradient-to-r from-red-400 to-pink-500 text-white shadow-sm'
+                    : 'text-gray-600 hover:text-pink-500'
                 }`}
               >
                 동영상
               </button>
               <button
                 onClick={() => setContentType('channel')}
-                className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all duration-300 ${
+                className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all duration-200 ${
                   contentType === 'channel'
-                    ? 'bg-gradient-to-r from-red-400 to-pink-400 text-white shadow-md'
-                    : 'text-gray-700 hover:bg-pink-100'
+                    ? 'bg-gradient-to-r from-red-400 to-pink-500 text-white shadow-sm'
+                    : 'text-gray-600 hover:text-pink-500'
                 }`}
               >
                 채널
               </button>
             </div>
           </div>
-          
-          <div className="flex items-center bg-white px-3 py-1.5 rounded-full shadow-inner border border-pink-100">
-            <label htmlFor="sort-select" className="text-sm text-gray-600 font-medium whitespace-nowrap mr-2">정렬:</label>
-            <div className="relative">
+
+          <div className="flex items-center space-x-4">
+            {/* 정렬 옵션 */}
+            <div className="flex items-center">
               <select
-                id="sort-select"
                 value={sortField}
-                onChange={handleSortChange}
-                className="appearance-none bg-transparent rounded-full px-3 py-1 pr-8 text-sm focus:outline-none text-gray-700"
+                onChange={(e) => setSortField(e.target.value)}
+                className="bg-white border border-pink-200 text-gray-700 text-sm rounded-full px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-pink-100 focus:border-pink-300 appearance-none cursor-pointer"
+                style={{ backgroundPosition: 'right 0.75rem center' }}
               >
-                <option value="publishedAt">게시일</option>
-                <option value="title">제목</option>
-                {contentType !== 'channel' && (
-                  <option value="viewCount">조회수</option>
-                )}
-                {contentType !== 'video' && (
-                  <option value="subscriberCount">구독자 수</option>
-                )}
-                <option value="recentViewsGrowth">조회수 성장률</option>
-                <option value="estimatedRevenue">예상 수익</option>
-                <option value="engagementRate">참여율</option>
-                <option value="averageViewDuration">평균 시청 시간</option>
+                {filteredSortOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
               </select>
-              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-pink-500">
-                <span className="icon icon-arrow-down w-4 h-4"></span>
-              </div>
+              <button
+                onClick={() => setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')}
+                className="ml-2 p-1.5 bg-white border border-pink-200 rounded-full hover:bg-pink-50 transition-colors duration-200"
+              >
+                <span className={`text-gray-600 ${sortDirection === 'asc' ? 'transform rotate-180' : ''}`}>
+                  ▼
+                </span>
+              </button>
             </div>
-            
-            <button
-              onClick={toggleSortDirection}
-              className="ml-2 p-1.5 hover:bg-pink-100 transition-colors duration-300 rounded-full flex items-center justify-center"
-              title={sortDirection === 'asc' ? '오름차순' : '내림차순'}
-            >
-              <span className={`icon ${sortDirection === 'asc' ? 'icon-arrow-up' : 'icon-arrow-down'} text-pink-500`}></span>
-            </button>
+
+            {/* 총 결과 수 */}
+            <div className="text-sm text-gray-600 bg-white px-3 py-1.5 rounded-full border border-pink-100 shadow-sm">
+              총 <span className="font-bold text-pink-600">{totalResults}</span>개 결과
+            </div>
           </div>
         </div>
       </div>

@@ -21,8 +21,14 @@ export function formatNumber(num: number): string {
  * ISO 날짜 문자열을 한국어 형식으로 변환합니다
  */
 export function formatDate(dateString: string): string {
-  const date = new Date(dateString);
-  return `${date.getFullYear()}년 ${date.getMonth() + 1}월 ${date.getDate()}일`;
+  try {
+    const date = parseISO(dateString);
+    return format(date, 'yyyy-MM-dd', { locale: ko });
+  } catch (error) {
+    // 날짜 파싱 오류 처리
+    console.error('날짜 형식 오류:', dateString);
+    return '날짜 없음';
+  }
 }
 
 /**
@@ -49,4 +55,19 @@ export function calculateGrowthRate(current: number, previous: number): string {
   if (previous === 0) return '∞%';
   const rate = ((current - previous) / previous) * 100;
   return rate.toFixed(2) + '%';
+}
+
+export function formatDuration(duration: string): string {
+  const matches = duration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+  if (!matches) return '0:00';
+  
+  const hours = parseInt(matches[1] || '0', 10);
+  const minutes = parseInt(matches[2] || '0', 10);
+  const seconds = parseInt(matches[3] || '0', 10);
+  
+  if (hours > 0) {
+    return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+  }
+  
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 } 
