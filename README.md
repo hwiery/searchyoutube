@@ -1,36 +1,115 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# SearchYoutube
 
-## Getting Started
+YouTube 검색 서비스 - 사용자가 YouTube 동영상을 검색하고 결과를 볼 수 있는 웹 애플리케이션입니다.
 
-First, run the development server:
+## 기능
 
+- YouTube 동영상 검색
+- 검색 결과 필터링 및 정렬
+- 사용자 인증 (회원가입, 로그인)
+- 검색 기록 저장
+- 프리미엄 구독 서비스
+- 결제 시스템 (Toss Payments 연동)
+- 키워드 경쟁 분석 (프리미엄 기능)
+- 심화 필터링 (프리미엄 기능)
+
+## 설치 및 실행
+
+1. 저장소 클론
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+git clone https://github.com/yourusername/searchyoutube.git
+cd searchyoutube
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+2. 의존성 설치
+```bash
+npm install
+```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+3. 환경 변수 설정
+`.env.local` 파일을 생성하고 다음 변수를 설정합니다:
+```
+YOUTUBE_API_KEY=your_youtube_api_key
+NEXTAUTH_SECRET=your_nextauth_secret
+NEXTAUTH_URL=http://localhost:3000
+DATABASE_URL=your_database_url
+TOSS_SECRET_KEY=your_toss_secret_key
+TOSS_CLIENT_KEY=your_toss_client_key
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+4. 개발 서버 실행
+```bash
+npm run dev
+```
 
-## Learn More
+5. 브라우저에서 `http://localhost:3000` 접속
 
-To learn more about Next.js, take a look at the following resources:
+## 결제 시스템 테스트
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+이 프로젝트는 Toss Payments를 사용하여 결제 시스템을 구현했습니다. 테스트 모드에서 결제를 테스트하려면 다음 단계를 따르세요:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+1. 가격 페이지(`/price`)에서 '프리미엄으로 업그레이드' 버튼을 클릭합니다.
+2. Toss Payments 테스트 결제창이 열립니다.
+3. 테스트 카드 정보를 입력합니다:
+   - 카드 번호: `4111-1111-1111-1111`
+   - 만료일: 미래의 날짜
+   - CVC: 아무 3자리 숫자
+   - 비밀번호: 아무 숫자 2자리
 
-## Deploy on Vercel
+4. 결제 성공 시 성공 페이지로 리디렉션되며, 프리미엄 구독이 활성화됩니다.
+5. 실패 테스트를 위해서는 금액을 `1,000,000`원 이상으로 설정하거나, 카드번호를 `5555-5555-5555-5555`로 입력하면 실패 페이지로 리디렉션됩니다.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## 키워드 경쟁 분석 기능
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+키워드 경쟁 분석 기능은 YouTube 크리에이터가 특정 키워드의 경쟁 강도를 파악하고, 경쟁이 덜한 키워드를 선택하여 조회수와 구독자를 늘릴 수 있도록 돕습니다.
+
+### 기본 기능 (무료)
+- 검색 결과 페이지에서 키워드 경쟁도 점수(0-100) 및 레벨(낮음, 중간, 높음) 표시
+- '상세 분석하기' 버튼으로 키워드 분석 페이지로 이동
+
+### 프리미엄 기능
+- 상위 20개 영상 평균 조회수
+- 최근 30일 내 업로드 수
+- 추천 키워드 (경쟁도가 낮은 유사 키워드)
+- 상위 영상 목록 (제목, 채널, 조회수, 업로드 날짜)
+
+## 심화 필터링 기능
+
+심화 필터링 기능은 YouTube 크리에이터가 검색 결과를 더 정밀하게 필터링하여 숨은 기회를 발견할 수 있도록 지원합니다.
+
+### 기본 필터 (무료)
+- 조회수순 (높은 순 / 낮은 순)
+- 업로드 날짜순 (최신순 / 오래된 순)
+- 동영상 길이 (4분 미만, 4~20분, 20분 초과)
+- 동영상 형식 (Shorts, Long)
+
+### 심화 필터 (프리미엄)
+- 구독자 대비 조회수 비율 높은 순: 소규모 채널의 잠재력 높은 콘텐츠 탐색
+- 업로드 후 7일 내 조회수 높은 순: 초기 반응이 좋은 최신 트렌드 파악
+- 댓글 참여도 높은 순 (댓글 수 / 조회수): 시청자 반응이 활발한 콘텐츠 분석
+- 좋아요 비율 높은 순 (좋아요 / (좋아요 + 싫어요)): 시청자 만족도 높은 콘텐츠 식별
+
+## 프리미엄 기능
+
+프리미엄 구독 사용자는 다음과 같은 추가 기능을 이용할 수 있습니다:
+
+1. 무제한 검색 (일반 사용자는 일일 10회 제한)
+2. 고급 필터링 옵션
+3. 검색 결과 저장 및 내보내기
+4. 광고 없는 경험
+5. 키워드 경쟁 분석 상세 정보
+6. 심화 필터링 옵션
+
+## 기술 스택
+
+- Next.js 14 (App Router)
+- TypeScript
+- Tailwind CSS
+- NextAuth.js
+- Prisma
+- YouTube Data API
+- Toss Payments API
+
+## 라이센스
+
+MIT

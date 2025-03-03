@@ -100,6 +100,20 @@ export default function Navbar() {
             </Link>
           </div>
 
+          {/* 네비게이션 링크 - 데스크톱 */}
+          <div className="hidden md:flex items-center ml-6 space-x-4">
+            <Link 
+              href="/price" 
+              className={`px-3 py-2 rounded-full text-sm font-medium transition-colors duration-300 ${
+                isActive('/price') 
+                  ? 'bg-pink-100 text-pink-600' 
+                  : 'text-gray-700 hover:text-pink-600 hover:bg-pink-50'
+              }`}
+            >
+              가격 안내
+            </Link>
+          </div>
+
           {/* 검색창 */}
           <div className="flex-1 mx-4 hidden md:flex">
             <div className="flex items-center w-full max-w-3xl mx-auto">
@@ -227,6 +241,21 @@ export default function Navbar() {
         {/* 모바일 메뉴 */}
         {isMenuOpen && (
           <div className="md:hidden py-3 border-t border-pink-200 bg-white rounded-b-2xl shadow-lg animate-fadeIn">
+            {/* 모바일 네비게이션 링크 */}
+            <div className="px-4 py-2">
+              <Link 
+                href="/price" 
+                className={`block px-4 py-2 text-sm rounded-lg ${
+                  isActive('/price') 
+                    ? 'bg-pink-100 text-pink-600' 
+                    : 'text-gray-700 hover:text-pink-600 hover:bg-pink-50'
+                }`}
+                onClick={() => setIsMenuOpen(false)}
+              >
+                가격 안내
+              </Link>
+            </div>
+            
             {/* 모바일 검색창 */}
             <div className="px-4 py-2">
               <div className="flex items-center w-full bg-white rounded-full overflow-hidden border border-pink-200 shadow-md hover:shadow-lg transition-all duration-300 focus-within:ring-2 focus-within:ring-pink-100 focus-within:border-pink-400">

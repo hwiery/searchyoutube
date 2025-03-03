@@ -1,10 +1,12 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { YouTubeSearchResult } from '@/lib/youtube';
 import { formatNumber, formatDate, formatDuration } from '@/lib/utils';
 import Link from 'next/link';
 import Image from 'next/image';
+import { useSession } from 'next-auth/react';
+import { UserSubscription } from '@/types/user';
 
 interface ResultsTableProps {
   results: YouTubeSearchResult[];
@@ -24,19 +26,21 @@ interface FilterState {
   uploadDate: string;
   duration: string;
   videoFormat: string;
+  advancedSort: string; // 심화 필터링 옵션 추가
 }
 
 export default function ResultsTable({ results }: ResultsTableProps) {
   const [sortField, setSortField] = useState<keyof YouTubeSearchResult>('publishedAt');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(20);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
   const [displayedResults, setDisplayedResults] = useState<YouTubeSearchResult[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [filters, setFilters] = useState<FilterState>({
     uploadDate: '',
     duration: '',
-    videoFormat: ''
+    videoFormat: '',
+    advancedSort: '' // 심화 필터링 초기값
   });
   const tableRef = useRef<HTMLDivElement>(null);
   const observerRef = useRef<IntersectionObserver | null>(null);
@@ -45,6 +49,82 @@ export default function ResultsTable({ results }: ResultsTableProps) {
   const [expandedTags, setExpandedTags] = useState<{ [key: string]: boolean }>({});
   const [expandedTopics, setExpandedTopics] = useState<{ [key: string]: boolean }>({});
   const [isFilterExpanded, setIsFilterExpanded] = useState(false);
+  const { data: session } = useSession();
+  const [subscription, setSubscription] = useState<UserSubscription | null>(null);
+  const [showPremiumModal, setShowPremiumModal] = useState(false);
+
+  // 구독 정보 가져오기
+  useEffect(() => {
+    if (session) {
+      fetch('/api/subscription')
+        .then(res => {
+          if (!res.ok) {
+            throw new Error('구독 정보를 가져오는데 실패했습니다.');
+          }
+          return res.json();
+        })
+        .then(data => setSubscription(data))
+        .catch(err => console.error('구독 정보를 가져오는 중 오류 발생:', err));
+    }
+  }, [session]);
+
+  // 아이템 개수 옵션
+  const itemsPerPageOptions = [
+    { value: 10, label: '10개', premium: false },
+    { value: 30, label: '30개', premium: true },
+    { value: 50, label: '50개', premium: true }
+  ];
+
+  // 아이템 개수 변경 핸들러
+  const handleItemsPerPageChange = (value: number) => {
+    // 프리미엄 사용자가 아니면서 프리미엄 옵션을 선택한 경우
+    if (!subscription?.isPremium && value > 10) {
+      setShowPremiumModal(true);
+      return;
+    }
+    
+    setItemsPerPage(value);
+    setCurrentPage(1);
+    setDisplayedResults([]);
+  };
+
+  // Excel 내보내기 함수
+  const exportToExcel = async () => {
+    // 프리미엄 사용자가 아닌 경우
+    if (!subscription?.isPremium) {
+      setShowPremiumModal(true);
+      return;
+    }
+    
+    try {
+      // xlsx 모듈을 동적으로 가져오기
+      const XLSX = await import('xlsx');
+      
+      // 데이터 준비
+      const exportData = filteredResults.map(result => ({
+        '제목': result.title,
+        '채널': result.channelTitle,
+        '조회수': result.viewCount,
+        '좋아요': result.likeCount,
+        '댓글': result.commentCount,
+        '업로드 날짜': formatDate(result.publishedAt),
+        '길이': result.duration ? formatDuration(result.duration) : '-'
+      }));
+      
+      // 워크시트 생성
+      const ws = XLSX.utils.json_to_sheet(exportData);
+      
+      // 워크북 생성
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'YouTube 검색 결과');
+      
+      // 파일 저장
+      XLSX.writeFile(wb, `youtube-search-${new Date().toISOString().split('T')[0]}.xlsx`);
+    } catch (error) {
+      console.error('Excel 내보내기 오류:', error);
+      alert('Excel 내보내기 중 오류가 발생했습니다.');
+    }
+  };
 
   // 필터 옵션 정의 수정
   const filterOptions = {
@@ -66,6 +146,18 @@ export default function ResultsTable({ results }: ResultsTableProps) {
       { value: '', label: '전체' },
       { value: 'shorts', label: 'Shorts' },
       { value: 'long', label: 'Long' }
+    ],
+    // 심화 필터링 옵션 추가
+    advancedSort: [
+      { value: '', label: '기본 정렬', premium: false },
+      { value: 'views_desc', label: '조회수 높은 순', premium: false },
+      { value: 'views_asc', label: '조회수 낮은 순', premium: false },
+      { value: 'date_desc', label: '최신순', premium: false },
+      { value: 'date_asc', label: '오래된 순', premium: false },
+      { value: 'view_subscriber_ratio', label: '구독자 대비 조회수 높은 순', premium: true },
+      { value: 'first_week_views', label: '업로드 후 7일 내 조회수 높은 순', premium: true },
+      { value: 'comment_engagement', label: '댓글 참여도 높은 순', premium: true },
+      { value: 'like_ratio', label: '좋아요 비율 높은 순', premium: true }
     ]
   };
 
@@ -170,21 +262,79 @@ export default function ResultsTable({ results }: ResultsTableProps) {
     return hours * 3600 + minutes * 60 + seconds;
   };
 
-  // 필터링된 결과 계산 수정
-  const filteredResults = results.filter(result => {
-    const dateMatch = !filters.uploadDate || filterByDate(result.publishedAt, filters.uploadDate);
-    const durationMatch = !filters.duration || filterByDuration(result.duration || '', filters.duration);
-    const formatMatch = !filters.videoFormat || getVideoFormat(result).format === filters.videoFormat;
+  // 심화 필터링 로직 구현
+  const applyAdvancedFilters = (results: YouTubeSearchResult[], filterValue: string): YouTubeSearchResult[] => {
+    if (!filterValue) return results;
     
-    return dateMatch && durationMatch && formatMatch;
-  });
+    // 프리미엄 사용자가 아닌 경우 프리미엄 필터 적용 불가
+    const isPremiumFilter = filterOptions.advancedSort.find(option => option.value === filterValue)?.premium;
+    if (isPremiumFilter && !subscription?.isPremium) {
+      setShowPremiumModal(true);
+      return results;
+    }
+    
+    switch (filterValue) {
+      case 'views_desc':
+        return [...results].sort((a, b) => Number(b.viewCount) - Number(a.viewCount));
+      case 'views_asc':
+        return [...results].sort((a, b) => Number(a.viewCount) - Number(b.viewCount));
+      case 'date_desc':
+        return [...results].sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
+      case 'date_asc':
+        return [...results].sort((a, b) => new Date(a.publishedAt).getTime() - new Date(b.publishedAt).getTime());
+      case 'view_subscriber_ratio':
+        return [...results].sort((a, b) => {
+          const ratioA = Number(a.viewCount) / Number(a.channelSubscriberCount || 1);
+          const ratioB = Number(b.viewCount) / Number(b.channelSubscriberCount || 1);
+          return ratioB - ratioA;
+        });
+      case 'first_week_views':
+        return [...results].sort((a, b) => {
+          // 업로드 후 7일 내 조회수 (이 데이터가 API에서 제공되는 경우)
+          // 실제 구현에서는 이 데이터를 가져와야 함
+          const firstWeekViewsA = a.firstWeekViews || 0;
+          const firstWeekViewsB = b.firstWeekViews || 0;
+          return firstWeekViewsB - firstWeekViewsA;
+        });
+      case 'comment_engagement':
+        return [...results].sort((a, b) => {
+          const engagementA = Number(a.commentCount) / Number(a.viewCount || 1);
+          const engagementB = Number(b.commentCount) / Number(b.viewCount || 1);
+          return engagementB - engagementA;
+        });
+      case 'like_ratio':
+        return [...results].sort((a, b) => {
+          const ratioA = Number(a.likeCount) / (Number(a.likeCount) + Number(a.dislikeCount || 0));
+          const ratioB = Number(b.likeCount) / (Number(b.likeCount) + Number(b.dislikeCount || 0));
+          return ratioB - ratioA;
+        });
+      default:
+        return results;
+    }
+  };
+
+  // 필터링된 결과 계산 수정
+  const filteredResults = useMemo(() => {
+    let results = results.filter(result => {
+      const dateMatch = !filters.uploadDate || filterByDate(result.publishedAt, filters.uploadDate);
+      const durationMatch = !filters.duration || filterByDuration(result.duration || '', filters.duration);
+      const formatMatch = !filters.videoFormat || getVideoFormat(result).format === filters.videoFormat;
+      
+      return dateMatch && durationMatch && formatMatch;
+    });
+    
+    // 심화 필터링 적용
+    results = applyAdvancedFilters(results, filters.advancedSort);
+    
+    return results;
+  }, [results, filters, subscription?.isPremium]);
 
   // 필터 변경 시 displayedResults 업데이트
   useEffect(() => {
     setDisplayedResults([]);
     setCurrentPage(1);
     loadMoreItems();
-  }, [filters]);
+  }, [filters, itemsPerPage]);
 
   const handleSort = (field: keyof YouTubeSearchResult) => {
     if (sortField === field) {
@@ -277,17 +427,47 @@ export default function ResultsTable({ results }: ResultsTableProps) {
   }, []);
 
   const loadMoreItems = () => {
-    if (isLoading || displayedResults.length >= filteredResults.length) return;
-
+    if (isLoading) return;
+    
     setIsLoading(true);
     
-    // 다음 페이지 데이터 계산
+    // 현재 페이지에 해당하는 아이템 가져오기
     const startIndex = (currentPage - 1) * itemsPerPage;
     const endIndex = Math.min(startIndex + itemsPerPage, filteredResults.length);
-    const newItems = filteredResults.slice(0, endIndex);
     
-    // 데이터 업데이트
-    setDisplayedResults(newItems);
+    // 프리미엄 사용자가 아닌 경우 최대 10개로 제한
+    const maxItems = subscription?.isPremium ? itemsPerPage : Math.min(10, itemsPerPage);
+    const limitedEndIndex = Math.min(startIndex + maxItems, filteredResults.length);
+    
+    const newItems = filteredResults.slice(startIndex, limitedEndIndex);
+    
+    // 정렬 적용
+    const sortedItems = [...newItems].sort((a, b) => {
+      let valueA = a[sortField];
+      let valueB = b[sortField];
+
+      // 숫자 필드 처리
+      if (typeof valueA === 'number' && typeof valueB === 'number') {
+        return sortDirection === 'asc' ? valueA - valueB : valueB - valueA;
+      }
+
+      // 날짜 필드 처리
+      if (sortField === 'publishedAt') {
+        valueA = new Date(valueA as string).getTime();
+        valueB = new Date(valueB as string).getTime();
+        return sortDirection === 'asc' ? valueA - valueB : valueB - valueA;
+      }
+
+      // 문자열 필드 처리
+      valueA = String(valueA || '');
+      valueB = String(valueB || '');
+      return sortDirection === 'asc' ? 
+        valueA.localeCompare(valueB) : 
+        valueB.localeCompare(valueA);
+    });
+    
+    // 기존 결과에 새 결과 추가
+    setDisplayedResults(prev => [...prev, ...sortedItems]);
     setCurrentPage(prev => prev + 1);
     setIsLoading(false);
   };
@@ -512,115 +692,62 @@ export default function ResultsTable({ results }: ResultsTableProps) {
 
   // 필터 UI 렌더링 수정
   const renderFilters = () => (
-    <div className="mb-6 bg-white rounded-lg shadow-md overflow-hidden">
-      {/* 필터 헤더 */}
-      <div 
-        className="p-4 cursor-pointer flex items-center justify-between hover:bg-pink-50/30 transition-colors duration-200"
-        onClick={() => setIsFilterExpanded(!isFilterExpanded)}
-            >
-              <div className="flex items-center">
-          <h2 className="text-lg font-bold text-gray-800">검색 필터</h2>
-          <span className="ml-2 text-sm text-pink-600">
-            ({filteredResults.length}개 결과)
-          </span>
+    <div className="bg-white p-4 rounded-lg shadow mb-4">
+      <div className="flex flex-col md:flex-row gap-4">
+        {/* 기존 필터... */}
+        <div className="flex-1">
+          <label className="block text-sm font-medium text-gray-700 mb-1">업로드 날짜</label>
+          <select
+            className="block w-full rounded-md border-gray-300 shadow-sm focus:border-red-500 focus:ring-red-500"
+            value={filters.uploadDate}
+            onChange={(e) => handleFilterChange('uploadDate', e.target.value)}
+          >
+            {filterOptions.uploadDate.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
         </div>
-        <button className="text-pink-400 hover:text-pink-600">
-          <span className={`transform transition-transform duration-200 ${isFilterExpanded ? 'rotate-180' : ''}`}>
-            ▼
-          </span>
-        </button>
+        <div className="flex-1">
+          <label className="block text-sm font-medium text-gray-700 mb-1">동영상 길이</label>
+          <select
+            className="block w-full rounded-md border-gray-300 shadow-sm focus:border-red-500 focus:ring-red-500"
+            value={filters.duration}
+            onChange={(e) => handleFilterChange('duration', e.target.value)}
+          >
+            {filterOptions.duration.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
+        </div>
+        <div className="flex-1">
+          <label className="block text-sm font-medium text-gray-700 mb-1">동영상 형식</label>
+          <select
+            className="block w-full rounded-md border-gray-300 shadow-sm focus:border-red-500 focus:ring-red-500"
+            value={filters.videoFormat}
+            onChange={(e) => handleFilterChange('videoFormat', e.target.value)}
+          >
+            {filterOptions.videoFormat.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
+        </div>
+        
+        {/* 심화 필터링 드롭다운 추가 */}
+        <div className="flex-1">
+          <label className="block text-sm font-medium text-gray-700 mb-1">정렬 기준</label>
+          <select
+            className="block w-full rounded-md border-gray-300 shadow-sm focus:border-red-500 focus:ring-red-500"
+            value={filters.advancedSort}
+            onChange={(e) => handleFilterChange('advancedSort', e.target.value)}
+          >
+            {filterOptions.advancedSort.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label} {option.premium && '(Premium)'}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
-
-      {/* 필터 내용 */}
-      {isFilterExpanded && (
-        <>
-          <div className="p-4 border-t border-pink-100">
-            <div className="space-y-6">
-              {/* 업로드 날짜 필터 */}
-              <div>
-                <h3 className="text-sm font-semibold mb-3 text-gray-700">업로드 날짜</h3>
-                <div className="flex flex-wrap gap-2">
-                  {filterOptions.uploadDate.map(option => (
-                    <label
-                      key={option.value}
-                      className={`relative cursor-pointer px-4 py-2 rounded-full text-sm transition-all duration-200
-                        ${filters.uploadDate === option.value
-                          ? 'bg-pink-100 text-pink-700 shadow-sm'
-                          : 'bg-gray-50 text-gray-600 hover:bg-pink-50'
-                        }`}
-                    >
-                      <input
-                        type="radio"
-                        name="uploadDate"
-                        value={option.value}
-                        checked={filters.uploadDate === option.value}
-                        onChange={(e) => handleFilterChange('uploadDate', e.target.value)}
-                        className="sr-only"
-                      />
-                      {option.label}
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              {/* 길이 필터 */}
-              <div>
-                <h3 className="text-sm font-semibold mb-3 text-gray-700">길이</h3>
-                <div className="flex flex-wrap gap-2">
-                  {filterOptions.duration.map(option => (
-                    <label
-                      key={option.value}
-                      className={`relative cursor-pointer px-4 py-2 rounded-full text-sm transition-all duration-200
-                        ${filters.duration === option.value
-                          ? 'bg-pink-100 text-pink-700 shadow-sm'
-                          : 'bg-gray-50 text-gray-600 hover:bg-pink-50'
-                        }`}
-                    >
-                      <input
-                        type="radio"
-                        name="duration"
-                        value={option.value}
-                        checked={filters.duration === option.value}
-                        onChange={(e) => handleFilterChange('duration', e.target.value)}
-                        className="sr-only"
-                      />
-                      {option.label}
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              {/* 형식 필터 */}
-              <div>
-                <h3 className="text-sm font-semibold mb-3 text-gray-700">형식</h3>
-                <div className="flex flex-wrap gap-2">
-                  {filterOptions.videoFormat.map(option => (
-                    <label
-                      key={option.value}
-                      className={`relative cursor-pointer px-4 py-2 rounded-full text-sm transition-all duration-200
-                        ${filters.videoFormat === option.value
-                          ? 'bg-pink-100 text-pink-700 shadow-sm'
-                          : 'bg-gray-50 text-gray-600 hover:bg-pink-50'
-                        }`}
-                    >
-                      <input
-                        type="radio"
-                        name="videoFormat"
-                        value={option.value}
-                        checked={filters.videoFormat === option.value}
-                        onChange={(e) => handleFilterChange('videoFormat', e.target.value)}
-                        className="sr-only"
-                      />
-                      {option.label}
-                    </label>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-          {renderSelectedFilters()}
-        </>
-      )}
     </div>
   );
 
@@ -786,7 +913,7 @@ export default function ResultsTable({ results }: ResultsTableProps) {
                     <span className="text-xs">{device}: {percentage}%</span>
                   </div>
                 ))}
-                  </div>
+              </div>
             )}
           </td>
         );
@@ -890,9 +1017,9 @@ export default function ResultsTable({ results }: ResultsTableProps) {
                       <span className="text-xs">{country}: {percentage.toFixed(1)}%</span>
                     </div>
                   ))}
-                  </div>
-                )}
-              </td>
+              </div>
+            )}
+          </td>
         );
       case 'demographics':
         return (
@@ -902,8 +1029,8 @@ export default function ResultsTable({ results }: ResultsTableProps) {
                 <div>인구통계: {result.demographics.population.toLocaleString()}</div>
                 <div>인구밀도: {result.demographics.populationDensity.toLocaleString()} people/km²</div>
               </div>
-                )}
-              </td>
+            )}
+          </td>
         );
       case 'viewingPatterns':
         return (
@@ -914,13 +1041,13 @@ export default function ResultsTable({ results }: ResultsTableProps) {
                 <div>실시간 시청: {result.viewingPatterns.livePercentage.toFixed(1)}%</div>
               </div>
             )}
-              </td>
+          </td>
         );
       case 'contentReach':
         return (
           <td key={col.id} className="px-4 py-4">
             {result.contentReach?.toFixed(1)}%
-                  </td>
+          </td>
         );
       case 'trafficSources':
         return (
@@ -933,8 +1060,8 @@ export default function ResultsTable({ results }: ResultsTableProps) {
                   </div>
                 ))}
               </div>
-                    )}
-                  </td>
+            )}
+          </td>
         );
       case 'deviceStats':
         return (
@@ -948,13 +1075,13 @@ export default function ResultsTable({ results }: ResultsTableProps) {
                 ))}
               </div>
             )}
-                  </td>
+          </td>
         );
       default:
         return (
           <td key={col.id} className="px-4 py-4">
             {String(result[col.id as keyof YouTubeSearchResult] || '-')}
-                  </td>
+          </td>
         );
     }
   };
@@ -1071,87 +1198,110 @@ export default function ResultsTable({ results }: ResultsTableProps) {
   }, 0);
 
   return (
-    <div className="overflow-hidden" ref={tableRef}>
-      {renderFilters()}
-      <div className="relative">
-        {/* 테이블 헤더 (고정) */}
-        <div className="sticky top-0 z-30 bg-gradient-to-r from-pink-50 to-purple-50 shadow-md border-b border-pink-100 overflow-hidden">
-          <div className="header-table" style={{ width: `${tableWidth}px`, minWidth: '100%' }}>
-            <table className="w-full" style={{ tableLayout: 'fixed' }}>
-              <colgroup>
-                {visibleColumns.map(col => (
-                  <col key={col.id} style={{ width: col.width }} />
-                ))}
-              </colgroup>
-              <thead>
-                <tr className="border-b border-pink-100">
-                  {visibleColumns.map(col => (
-                    <th 
-                      key={col.id}
-                      className={`px-6 py-5 text-left text-sm font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap ${
-                        col.sortable ? 'cursor-pointer hover:bg-pink-100 transition-colors duration-200' : ''
-                      }`}
-                      onClick={() => col.sortable && col.field && handleSort(col.field as keyof YouTubeSearchResult)}
-                    >
-                      <div className="flex items-center">
-                        {col.label} {col.sortable && col.field && renderSortIcon(col.field as keyof YouTubeSearchResult)}
-                      </div>
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-            </table>
-          </div>
-        </div>
-        
-        {/* 테이블 본문 (스크롤 가능) */}
-        <div 
-          ref={scrollContainerRef}
-          className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-200px)] custom-scrollbar"
-          style={{ width: '100%' }}
-        >
-          <div style={{ width: `${tableWidth}px`, minWidth: '100%' }}>
-            <table className="w-full" style={{ tableLayout: 'fixed' }}>
-              <colgroup>
-                {visibleColumns.map(col => (
-                  <col key={col.id} style={{ width: col.width }} />
-                ))}
-              </colgroup>
-              <tbody className="bg-white divide-y divide-pink-100">
-                {displayedResults.map((result, index) => (
-                  <tr 
-                    key={result.id} 
-                    className={`hover:bg-pink-50 transition-colors duration-200 ${index % 2 === 0 ? 'bg-white' : 'bg-pink-50/30'}`}
+    <div className="w-full">
+      {/* 테이블 헤더 및 필터 */}
+      <div className="p-4 border-b border-gray-200 bg-white">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-4">
+          <h2 className="text-xl font-semibold text-gray-800 mb-2 md:mb-0">
+            검색 결과 <span className="text-pink-600">{filteredResults.length}</span>개
+          </h2>
+          
+          <div className="flex flex-wrap items-center gap-2">
+            {/* 결과 개수 선택 */}
+            <div className="flex items-center">
+              <label htmlFor="itemsPerPage" className="text-sm text-gray-600 mr-2">
+                표시:
+              </label>
+              <select
+                id="itemsPerPage"
+                value={itemsPerPage}
+                onChange={(e) => handleItemsPerPageChange(Number(e.target.value))}
+                className="bg-white border border-gray-300 text-gray-700 text-sm rounded-lg focus:ring-pink-500 focus:border-pink-500 p-2"
+              >
+                {itemsPerPageOptions.map(option => (
+                  <option 
+                    key={option.value} 
+                    value={option.value}
+                    disabled={option.premium && !subscription?.isPremium}
                   >
-                    {visibleColumns.map(col => renderCell(result, col))}
-            </tr>
-          ))}
-              </tbody>
-            </table>
+                    {option.label} {option.premium && !subscription?.isPremium ? '(프리미엄)' : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+            
+            {/* Excel 내보내기 버튼 */}
+            <button
+              onClick={exportToExcel}
+              className={`flex items-center px-3 py-2 rounded-lg text-sm font-medium ${
+                subscription?.isPremium
+                  ? 'bg-green-100 text-green-700 hover:bg-green-200'
+                  : 'bg-gray-100 text-gray-500 cursor-not-allowed'
+              }`}
+              title={subscription?.isPremium ? 'Excel로 내보내기' : '프리미엄 기능입니다'}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" />
+              </svg>
+              Excel 내보내기
+              {!subscription?.isPremium && (
+                <span className="ml-1 text-xs bg-gray-200 text-gray-700 px-1 rounded">
+                  프리미엄
+                </span>
+              )}
+            </button>
+            
+            {/* 필터 토글 버튼 */}
+            <button
+              onClick={() => setIsFilterExpanded(!isFilterExpanded)}
+              className="flex items-center px-3 py-2 rounded-lg text-sm font-medium bg-gray-100 text-gray-700 hover:bg-gray-200"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M3 3a1 1 0 011-1h12a1 1 0 011 1v3a1 1 0 01-.293.707L12 11.414V15a1 1 0 01-.293.707l-2 2A1 1 0 018 17v-5.586L3.293 6.707A1 1 0 013 6V3z" clipRule="evenodd" />
+              </svg>
+              필터
+              {Object.values(filters).some(v => v) && (
+                <span className="ml-1 bg-pink-500 text-white w-4 h-4 rounded-full flex items-center justify-center text-xs">
+                  {Object.values(filters).filter(v => v).length}
+                </span>
+              )}
+            </button>
           </div>
         </div>
         
-        {/* 무한 스크롤 로딩 인디케이터 */}
-        <div ref={loadMoreRef} className="py-4 text-center">
-          {isLoading && (
-            <div className="flex justify-center items-center py-4">
-              <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-pink-500"></div>
-                </div>
-          )}
-          {!isLoading && displayedResults.length < filteredResults.length && (
-            <button 
-              onClick={loadMoreItems}
-              className="px-4 py-2 bg-pink-100 text-pink-700 rounded-lg hover:bg-pink-200 transition-colors duration-200"
-            >
-              더 보기 ({displayedResults.length}/{filteredResults.length})
-            </button>
-          )}
-        </div>
+        {/* 필터 UI */}
+        {isFilterExpanded && renderFilters()}
+        
+        {/* 선택된 필터 표시 */}
+        {Object.values(filters).some(v => v) && renderSelectedFilters()}
       </div>
+
+      {/* ... existing code ... */}
       
-      {filteredResults.length === 0 && (
-        <div className="py-8 text-center">
-          <p className="text-gray-500">검색 결과가 없습니다.</p>
+      {/* 프리미엄 안내 모달 */}
+      {showPremiumModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full mx-4 shadow-xl">
+            <h3 className="text-xl font-bold text-gray-800 mb-4">프리미엄 기능</h3>
+            <p className="text-gray-600 mb-4">
+              선택하신 기능은 프리미엄 사용자만 이용할 수 있습니다. 
+              프리미엄으로 업그레이드하여 더 많은 검색 결과와 Excel 내보내기 기능을 이용하세요.
+            </p>
+            <div className="flex justify-end space-x-3">
+              <button 
+                onClick={() => setShowPremiumModal(false)}
+                className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
+              >
+                닫기
+              </button>
+              <Link 
+                href="/price"
+                className="px-4 py-2 bg-gradient-to-r from-red-400 to-pink-500 text-white rounded-lg hover:from-red-500 hover:to-pink-600"
+              >
+                프리미엄 알아보기
+              </Link>
+            </div>
+          </div>
         </div>
       )}
     </div>

@@ -18,6 +18,18 @@ const nextConfig = {
   },
   // 정적 내보내기 비활성화
   reactStrictMode: false,
+  // xlsx 모듈 처리를 위한 webpack 설정
+  webpack: (config, { isServer }) => {
+    if (!isServer) {
+      config.resolve.fallback = {
+        ...config.resolve.fallback,
+        fs: false,
+        stream: false,
+        os: false
+      };
+    }
+    return config;
+  },
 };
 
 module.exports = nextConfig; 

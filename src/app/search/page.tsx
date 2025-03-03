@@ -5,11 +5,18 @@ import { useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { searchYouTube, type YouTubeSearchResult } from '@/lib/youtube';
 import ResultsTable from '@/components/results-table';
+import { UserSubscription } from '@/types/user';
+import Link from 'next/link';
 
 interface SearchLimit {
   remainingSearches: number;
   totalLimit: number;
   resetAt: string;
+}
+
+interface KeywordCompetition {
+  score: number;
+  level: 'low' | 'medium' | 'high';
 }
 
 export default function SearchPage() {
@@ -21,6 +28,9 @@ export default function SearchPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchLimit, setSearchLimit] = useState<SearchLimit | null>(null);
+  const [subscription, setSubscription] = useState<UserSubscription | null>(null);
+  const [keywordCompetition, setKeywordCompetition] = useState<KeywordCompetition | null>(null);
+  const [isLoadingCompetition, setIsLoadingCompetition] = useState(false);
 
   // 검색 제한 정보 가져오기
   useEffect(() => {
@@ -36,6 +46,38 @@ export default function SearchPage() {
         .catch(err => console.error('검색 제한 정보를 가져오는 중 오류 발생:', err));
     }
   }, [session]);
+
+  // 구독 정보 가져오기
+  useEffect(() => {
+    if (session) {
+      fetch('/api/subscription')
+        .then(res => {
+          if (!res.ok) {
+            throw new Error('구독 정보를 가져오는데 실패했습니다.');
+          }
+          return res.json();
+        })
+        .then(data => setSubscription(data))
+        .catch(err => console.error('구독 정보를 가져오는 중 오류 발생:', err));
+    }
+  }, [session]);
+  
+  // 키워드 경쟁도 가져오기
+  useEffect(() => {
+    if (query && session) {
+      setIsLoadingCompetition(true);
+      fetch(`/api/keyword-competition?keyword=${encodeURIComponent(query)}`)
+        .then(res => {
+          if (!res.ok) {
+            throw new Error('키워드 경쟁도 정보를 가져오는데 실패했습니다.');
+          }
+          return res.json();
+        })
+        .then(data => setKeywordCompetition(data))
+        .catch(err => console.error('키워드 경쟁도 정보를 가져오는 중 오류 발생:', err))
+        .finally(() => setIsLoadingCompetition(false));
+    }
+  }, [query, session]);
 
   // 검색 실행
   const fetchResults = async () => {
@@ -96,6 +138,16 @@ export default function SearchPage() {
       fetchResults();
     }
   }, [query]);
+  
+  // 경쟁도 레벨에 따른 색상 클래스
+  const getLevelColorClass = (level: 'low' | 'medium' | 'high') => {
+    switch (level) {
+      case 'low': return 'text-green-600';
+      case 'medium': return 'text-yellow-600';
+      case 'high': return 'text-red-600';
+      default: return '';
+    }
+  };
 
   return (
     <section className="w-full flex flex-col">
@@ -111,6 +163,35 @@ export default function SearchPage() {
                   로그인하기
                 </a>
               )}
+            </div>
+          </div>
+        )}
+        
+        {/* 키워드 경쟁도 표시 */}
+        {query && keywordCompetition && (
+          <div className="container mx-auto max-w-6xl px-4 mt-4">
+            <div className="bg-white border border-gray-200 px-6 py-4 rounded-2xl shadow-sm mb-6">
+              <div className="flex flex-col md:flex-row items-center justify-between">
+                <div className="flex items-center mb-3 md:mb-0">
+                  <span className="text-gray-700 font-medium mr-2">키워드 경쟁도:</span>
+                  {isLoadingCompetition ? (
+                    <span className="text-sm text-gray-500">분석 중...</span>
+                  ) : (
+                    <span className={`font-bold ${getLevelColorClass(keywordCompetition.level)}`}>
+                      {keywordCompetition.score}/100 ({
+                        keywordCompetition.level === 'low' ? '낮음' :
+                        keywordCompetition.level === 'medium' ? '중간' : '높음'
+                      })
+                    </span>
+                  )}
+                </div>
+                <Link
+                  href={`/keyword-analysis?keyword=${encodeURIComponent(query)}`}
+                  className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 text-sm"
+                >
+                  상세 분석하기
+                </Link>
+              </div>
             </div>
           </div>
         )}
