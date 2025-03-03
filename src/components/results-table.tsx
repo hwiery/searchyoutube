@@ -23,8 +23,6 @@ interface ColumnDefinition {
 interface FilterState {
   uploadDate: string;
   duration: string;
-  features: string[];
-  sortBy: string;
   videoFormat: string;
 }
 
@@ -38,8 +36,6 @@ export default function ResultsTable({ results }: ResultsTableProps) {
   const [filters, setFilters] = useState<FilterState>({
     uploadDate: '',
     duration: '',
-    features: [],
-    sortBy: 'publishedAt',
     videoFormat: ''
   });
   const tableRef = useRef<HTMLDivElement>(null);
@@ -53,6 +49,7 @@ export default function ResultsTable({ results }: ResultsTableProps) {
   // 필터 옵션 정의 수정
   const filterOptions = {
     uploadDate: [
+      { value: '', label: '전체' },
       { value: 'hour', label: '지난 1시간' },
       { value: 'today', label: '오늘' },
       { value: 'week', label: '이번 주' },
@@ -60,20 +57,13 @@ export default function ResultsTable({ results }: ResultsTableProps) {
       { value: 'year', label: '올해' }
     ],
     duration: [
+      { value: '', label: '전체' },
       { value: 'short', label: '4분 미만' },
       { value: 'medium', label: '4~20분' },
       { value: 'long', label: '20분 초과' }
     ],
-    features: [
-      { value: '4k', label: '4K' },
-      { value: 'hd', label: 'HD' },
-      { value: 'caption', label: '자막' }
-    ],
-    sortBy: [
-      { value: 'publishedAt', label: '업로드 날짜' },
-      { value: 'viewCount', label: '조회수' }
-    ],
     videoFormat: [
+      { value: '', label: '전체' },
       { value: 'shorts', label: 'Shorts' },
       { value: 'long', label: 'Long' }
     ]
@@ -83,15 +73,10 @@ export default function ResultsTable({ results }: ResultsTableProps) {
   const handleFilterChange = (type: keyof FilterState, value: string) => {
     setFilters(prev => ({
       ...prev,
-      [type]: type === 'features' 
-        ? prev.features.includes(value)
-          ? prev.features.filter(f => f !== value)
-          : [...prev.features, value]
-        : type === 'videoFormat'
-          ? value
-          : prev[type]
+      [type]: value
     }));
     setCurrentPage(1);
+    setDisplayedResults([]); // 표시된 결과 초기화
   };
 
   // 날짜 필터링 함수
@@ -189,11 +174,17 @@ export default function ResultsTable({ results }: ResultsTableProps) {
   const filteredResults = results.filter(result => {
     const dateMatch = !filters.uploadDate || filterByDate(result.publishedAt, filters.uploadDate);
     const durationMatch = !filters.duration || filterByDuration(result.duration || '', filters.duration);
-    const featuresMatch = filters.features.length === 0 || filterByFeatures(result, filters.features);
     const formatMatch = !filters.videoFormat || getVideoFormat(result).format === filters.videoFormat;
     
-    return dateMatch && durationMatch && featuresMatch && formatMatch;
+    return dateMatch && durationMatch && formatMatch;
   });
+
+  // 필터 변경 시 displayedResults 업데이트
+  useEffect(() => {
+    setDisplayedResults([]);
+    setCurrentPage(1);
+    loadMoreItems();
+  }, [filters]);
 
   const handleSort = (field: keyof YouTubeSearchResult) => {
     if (sortField === field) {
@@ -951,7 +942,7 @@ export default function ResultsTable({ results }: ResultsTableProps) {
       {/* 필터 내용 */}
       {isFilterExpanded && (
         <div className="p-4 border-t border-gray-100">
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {/* 업로드 날짜 필터 */}
             <div>
               <h3 className="text-sm font-semibold mb-2">업로드 날짜</h3>
@@ -992,25 +983,6 @@ export default function ResultsTable({ results }: ResultsTableProps) {
               </div>
             </div>
 
-            {/* 기능별 필터 */}
-            <div>
-              <h3 className="text-sm font-semibold mb-2">기능</h3>
-              <div className="space-y-2">
-                {filterOptions.features.map(option => (
-                  <label key={option.value} className="flex items-center">
-                    <input
-                      type="checkbox"
-                      value={option.value}
-                      checked={filters.features.includes(option.value)}
-                      onChange={(e) => handleFilterChange('features', e.target.value)}
-                      className="mr-2"
-                    />
-                    <span className="text-sm">{option.label}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-
             {/* 형식 필터 */}
             <div>
               <h3 className="text-sm font-semibold mb-2">형식</h3>
@@ -1023,29 +995,6 @@ export default function ResultsTable({ results }: ResultsTableProps) {
                       value={option.value}
                       checked={filters.videoFormat === option.value}
                       onChange={(e) => handleFilterChange('videoFormat', e.target.value)}
-                      className="mr-2"
-                    />
-                    <span className="text-sm">{option.label}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            {/* 정렬 기준 */}
-            <div>
-              <h3 className="text-sm font-semibold mb-2">정렬 기준</h3>
-              <div className="space-y-2">
-                {filterOptions.sortBy.map(option => (
-                  <label key={option.value} className="flex items-center">
-                    <input
-                      type="radio"
-                      name="sortBy"
-                      value={option.value}
-                      checked={filters.sortBy === option.value}
-                      onChange={(e) => {
-                        handleFilterChange('sortBy', e.target.value);
-                        setSortField(e.target.value as keyof YouTubeSearchResult);
-                      }}
                       className="mr-2"
                     />
                     <span className="text-sm">{option.label}</span>
