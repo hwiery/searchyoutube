@@ -472,6 +472,158 @@ export default function ResultsTable({ results }: ResultsTableProps) {
     );
   };
 
+  // 선택된 필터 표시 컴포넌트
+  const renderSelectedFilters = () => {
+    const selectedFilters = Object.entries(filters)
+      .filter(([_, value]) => value !== '')
+      .map(([type, value]) => {
+        const option = filterOptions[type as keyof typeof filterOptions]
+          .find(opt => opt.value === value);
+        return {
+          type,
+          label: option?.label || '',
+          value
+        };
+      });
+
+    if (selectedFilters.length === 0) return null;
+
+    return (
+      <div className="px-4 py-3 bg-pink-50/50 border-t border-pink-100">
+        <div className="flex flex-wrap gap-2">
+          {selectedFilters.map((filter) => (
+            <div
+              key={`${filter.type}-${filter.value}`}
+              className="flex items-center gap-2 px-3 py-1.5 bg-white rounded-full shadow-sm border border-pink-200"
+            >
+              <span className="text-sm text-pink-700">{filter.label}</span>
+              <button
+                onClick={() => handleFilterChange(filter.type as keyof FilterState, '')}
+                className="text-pink-400 hover:text-pink-600 transition-colors"
+              >
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  // 필터 UI 렌더링 수정
+  const renderFilters = () => (
+    <div className="mb-6 bg-white rounded-lg shadow-md overflow-hidden">
+      {/* 필터 헤더 */}
+      <div 
+        className="p-4 cursor-pointer flex items-center justify-between hover:bg-pink-50/30 transition-colors duration-200"
+        onClick={() => setIsFilterExpanded(!isFilterExpanded)}
+      >
+        <div className="flex items-center">
+          <h2 className="text-lg font-bold text-gray-800">검색 필터</h2>
+          <span className="ml-2 text-sm text-pink-600">
+            ({filteredResults.length}개 결과)
+          </span>
+        </div>
+        <button className="text-pink-400 hover:text-pink-600">
+          <span className={`transform transition-transform duration-200 ${isFilterExpanded ? 'rotate-180' : ''}`}>
+            ▼
+          </span>
+        </button>
+      </div>
+
+      {/* 필터 내용 */}
+      {isFilterExpanded && (
+        <>
+          <div className="p-4 border-t border-pink-100">
+            <div className="space-y-6">
+              {/* 업로드 날짜 필터 */}
+              <div>
+                <h3 className="text-sm font-semibold mb-3 text-gray-700">업로드 날짜</h3>
+                <div className="flex flex-wrap gap-2">
+                  {filterOptions.uploadDate.map(option => (
+                    <label
+                      key={option.value}
+                      className={`relative cursor-pointer px-4 py-2 rounded-full text-sm transition-all duration-200
+                        ${filters.uploadDate === option.value
+                          ? 'bg-pink-100 text-pink-700 shadow-sm'
+                          : 'bg-gray-50 text-gray-600 hover:bg-pink-50'
+                        }`}
+                    >
+                      <input
+                        type="radio"
+                        name="uploadDate"
+                        value={option.value}
+                        checked={filters.uploadDate === option.value}
+                        onChange={(e) => handleFilterChange('uploadDate', e.target.value)}
+                        className="sr-only"
+                      />
+                      {option.label}
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {/* 길이 필터 */}
+              <div>
+                <h3 className="text-sm font-semibold mb-3 text-gray-700">길이</h3>
+                <div className="flex flex-wrap gap-2">
+                  {filterOptions.duration.map(option => (
+                    <label
+                      key={option.value}
+                      className={`relative cursor-pointer px-4 py-2 rounded-full text-sm transition-all duration-200
+                        ${filters.duration === option.value
+                          ? 'bg-pink-100 text-pink-700 shadow-sm'
+                          : 'bg-gray-50 text-gray-600 hover:bg-pink-50'
+                        }`}
+                    >
+                      <input
+                        type="radio"
+                        name="duration"
+                        value={option.value}
+                        checked={filters.duration === option.value}
+                        onChange={(e) => handleFilterChange('duration', e.target.value)}
+                        className="sr-only"
+                      />
+                      {option.label}
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {/* 형식 필터 */}
+              <div>
+                <h3 className="text-sm font-semibold mb-3 text-gray-700">형식</h3>
+                <div className="flex flex-wrap gap-2">
+                  {filterOptions.videoFormat.map(option => (
+                    <label
+                      key={option.value}
+                      className={`relative cursor-pointer px-4 py-2 rounded-full text-sm transition-all duration-200
+                        ${filters.videoFormat === option.value
+                          ? 'bg-pink-100 text-pink-700 shadow-sm'
+                          : 'bg-gray-50 text-gray-600 hover:bg-pink-50'
+                        }`}
+                    >
+                      <input
+                        type="radio"
+                        name="videoFormat"
+                        value={option.value}
+                        checked={filters.videoFormat === option.value}
+                        onChange={(e) => handleFilterChange('videoFormat', e.target.value)}
+                        className="sr-only"
+                      />
+                      {option.label}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+          {renderSelectedFilters()}
+        </>
+      )}
+    </div>
+  );
+
   // 테이블 셀 렌더링 함수
   const renderCell = (result: YouTubeSearchResult, col: ColumnDefinition): React.ReactElement => {
     switch (col.id) {
@@ -917,96 +1069,6 @@ export default function ResultsTable({ results }: ResultsTableProps) {
     const width = parseInt(col.width);
     return acc + (isNaN(width) ? 100 : width);
   }, 0);
-
-  // 필터 UI 렌더링 수정
-  const renderFilters = () => (
-    <div className="mb-6 bg-white rounded-lg shadow-md">
-      {/* 필터 헤더 */}
-      <div 
-        className="p-4 cursor-pointer flex items-center justify-between hover:bg-gray-50 rounded-lg transition-colors duration-200"
-        onClick={() => setIsFilterExpanded(!isFilterExpanded)}
-      >
-        <div className="flex items-center">
-          <h2 className="text-lg font-bold text-gray-800">검색 필터</h2>
-          <span className="ml-2 text-sm text-gray-500">
-            ({filteredResults.length}개 결과)
-          </span>
-        </div>
-        <button className="text-gray-500 hover:text-gray-700">
-          <span className={`transform transition-transform duration-200 ${isFilterExpanded ? 'rotate-180' : ''}`}>
-            ▼
-          </span>
-        </button>
-      </div>
-
-      {/* 필터 내용 */}
-      {isFilterExpanded && (
-        <div className="p-4 border-t border-gray-100">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {/* 업로드 날짜 필터 */}
-            <div>
-              <h3 className="text-sm font-semibold mb-2">업로드 날짜</h3>
-              <div className="space-y-2">
-                {filterOptions.uploadDate.map(option => (
-                  <label key={option.value} className="flex items-center">
-                    <input
-                      type="radio"
-                      name="uploadDate"
-                      value={option.value}
-                      checked={filters.uploadDate === option.value}
-                      onChange={(e) => handleFilterChange('uploadDate', e.target.value)}
-                      className="mr-2"
-                    />
-                    <span className="text-sm">{option.label}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            {/* 길이 필터 */}
-            <div>
-              <h3 className="text-sm font-semibold mb-2">길이</h3>
-              <div className="space-y-2">
-                {filterOptions.duration.map(option => (
-                  <label key={option.value} className="flex items-center">
-                    <input
-                      type="radio"
-                      name="duration"
-                      value={option.value}
-                      checked={filters.duration === option.value}
-                      onChange={(e) => handleFilterChange('duration', e.target.value)}
-                      className="mr-2"
-                    />
-                    <span className="text-sm">{option.label}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            {/* 형식 필터 */}
-            <div>
-              <h3 className="text-sm font-semibold mb-2">형식</h3>
-              <div className="space-y-2">
-                {filterOptions.videoFormat.map(option => (
-                  <label key={option.value} className="flex items-center">
-                    <input
-                      type="radio"
-                      name="videoFormat"
-                      value={option.value}
-                      checked={filters.videoFormat === option.value}
-                      onChange={(e) => handleFilterChange('videoFormat', e.target.value)}
-                      className="mr-2"
-                    />
-                    <span className="text-sm">{option.label}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
 
   return (
     <div className="overflow-hidden" ref={tableRef}>
