@@ -5,6 +5,7 @@ import { YouTubeSearchResult } from '@/lib/youtube';
 import { formatNumber, formatDate, formatDuration } from '@/lib/utils';
 import Link from 'next/link';
 import Image from 'next/image';
+import * as XLSX from 'xlsx';
 
 interface ResultsTableProps {
   results: YouTubeSearchResult[];
@@ -30,7 +31,7 @@ export default function ResultsTable({ results }: ResultsTableProps) {
   const [sortField, setSortField] = useState<keyof YouTubeSearchResult>('publishedAt');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(20);
+  const [itemsPerPage, setItemsPerPage] = useState(10); // 기본값 10개로 설정
   const [displayedResults, setDisplayedResults] = useState<YouTubeSearchResult[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [filters, setFilters] = useState<FilterState>({
@@ -45,6 +46,7 @@ export default function ResultsTable({ results }: ResultsTableProps) {
   const [expandedTags, setExpandedTags] = useState<{ [key: string]: boolean }>({});
   const [expandedTopics, setExpandedTopics] = useState<{ [key: string]: boolean }>({});
   const [isFilterExpanded, setIsFilterExpanded] = useState(false);
+  const [totalPages, setTotalPages] = useState(1);
 
   // 필터 옵션 정의 수정
   const filterOptions = {
@@ -172,6 +174,9 @@ export default function ResultsTable({ results }: ResultsTableProps) {
 
   // 필터링된 결과 계산 수정
   const filteredResults = results.filter(result => {
+    // 결과가 없거나 undefined인 경우 필터링
+    if (!result) return false;
+    
     const dateMatch = !filters.uploadDate || filterByDate(result.publishedAt, filters.uploadDate);
     const durationMatch = !filters.duration || filterByDuration(result.duration || '', filters.duration);
     const formatMatch = !filters.videoFormat || getVideoFormat(result).format === filters.videoFormat;
@@ -179,13 +184,16 @@ export default function ResultsTable({ results }: ResultsTableProps) {
     return dateMatch && durationMatch && formatMatch;
   });
 
-  // 필터 변경 시 displayedResults 업데이트
+  // 페이지네이션 계산
   useEffect(() => {
-    setDisplayedResults([]);
-    setCurrentPage(1);
-    loadMoreItems();
-  }, [filters]);
+    setTotalPages(Math.ceil(filteredResults.length / itemsPerPage));
+    // 필터나 아이템 개수가 변경되면 첫 페이지로 이동
+    if (currentPage > Math.ceil(filteredResults.length / itemsPerPage)) {
+      setCurrentPage(1);
+    }
+  }, [filteredResults.length, itemsPerPage]);
 
+  // 정렬 처리 함수
   const handleSort = (field: keyof YouTubeSearchResult) => {
     if (sortField === field) {
       setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
@@ -193,105 +201,337 @@ export default function ResultsTable({ results }: ResultsTableProps) {
       setSortField(field);
       setSortDirection('desc');
     }
-    
-    // 정렬된 결과를 즉시 적용
-    const newSortDirection = sortField === field ? 
-      (sortDirection === 'asc' ? 'desc' : 'asc') : 
-      'desc';
-      
-    const sorted = [...displayedResults].sort((a, b) => {
-      let valueA = a[field];
-      let valueB = b[field];
+  };
+
+  // 현재 페이지의 결과 계산
+  useEffect(() => {
+    // 정렬된 결과 계산
+    const sortedResults = [...filteredResults].sort((a, b) => {
+      let valueA = a[sortField];
+      let valueB = b[sortField];
 
       // 숫자 필드 처리
       if (typeof valueA === 'number' && typeof valueB === 'number') {
-        return newSortDirection === 'asc' ? valueA - valueB : valueB - valueA;
+        return sortDirection === 'asc' ? valueA - valueB : valueB - valueA;
       }
 
       // 날짜 필드 처리
-      if (field === 'publishedAt') {
+      if (sortField === 'publishedAt') {
         valueA = new Date(valueA as string).getTime();
         valueB = new Date(valueB as string).getTime();
-        return newSortDirection === 'asc' ? valueA - valueB : valueB - valueA;
+        return sortDirection === 'asc' ? valueA - valueB : valueB - valueA;
       }
 
       // 문자열 필드 처리
       valueA = String(valueA || '');
       valueB = String(valueB || '');
-      return newSortDirection === 'asc' ? 
+      return sortDirection === 'asc' ? 
         valueA.localeCompare(valueB) : 
         valueB.localeCompare(valueA);
     });
-
-    setDisplayedResults(sorted);
-  };
-
-  // 무한 스크롤 구현
-  useEffect(() => {
-    // 초기 데이터 로드
-    loadMoreItems();
-
-    // 인터섹션 옵저버 설정
-    observerRef.current = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting && !isLoading && displayedResults.length < filteredResults.length) {
-          loadMoreItems();
-        }
-      },
-      { threshold: 0.1 }
-    );
-
-    if (loadMoreRef.current) {
-      observerRef.current.observe(loadMoreRef.current);
-    }
-
-    return () => {
-      if (observerRef.current) {
-        observerRef.current.disconnect();
-      }
-    };
-  }, [filteredResults, currentPage, isLoading]);
-
-  // 스크롤 동기화
-  useEffect(() => {
-    const handleScroll = () => {
-      if (scrollContainerRef.current) {
-        const scrollLeft = scrollContainerRef.current.scrollLeft;
-        const headerTable = document.querySelector('.header-table');
-        if (headerTable) {
-          (headerTable as HTMLElement).style.transform = `translateX(-${scrollLeft}px)`;
-        }
-      }
-    };
-
-    const scrollContainer = scrollContainerRef.current;
-    if (scrollContainer) {
-      scrollContainer.addEventListener('scroll', handleScroll);
-    }
-
-    return () => {
-      if (scrollContainer) {
-        scrollContainer.removeEventListener('scroll', handleScroll);
-      }
-    };
-  }, []);
-
-  const loadMoreItems = () => {
-    if (isLoading || displayedResults.length >= filteredResults.length) return;
-
-    setIsLoading(true);
     
-    // 다음 페이지 데이터 계산
+    // 현재 페이지의 결과 계산
     const startIndex = (currentPage - 1) * itemsPerPage;
-    const endIndex = Math.min(startIndex + itemsPerPage, filteredResults.length);
-    const newItems = filteredResults.slice(0, endIndex);
-    
-    // 데이터 업데이트
-    setDisplayedResults(newItems);
-    setCurrentPage(prev => prev + 1);
-    setIsLoading(false);
+    const endIndex = Math.min(startIndex + itemsPerPage, sortedResults.length);
+    setDisplayedResults(sortedResults.slice(startIndex, endIndex));
+  }, [filteredResults, sortField, sortDirection, currentPage, itemsPerPage]);
+
+  // 페이지 변경 핸들러
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
   };
 
+  // 아이템 개수 변경 핸들러
+  const handleItemsPerPageChange = (count: number) => {
+    setItemsPerPage(count);
+    setCurrentPage(1); // 개수 변경 시 첫 페이지로 이동
+  };
+
+  // 엑셀 다운로드 함수
+  const handleExcelDownload = () => {
+    // 엑셀에 포함할 데이터 준비
+    const excelData = displayedResults.map(result => ({
+      '제목': result.title,
+      '채널': result.channelTitle,
+      '업로드 날짜': formatDate(result.publishedAt),
+      '조회수': result.viewCount,
+      '좋아요': result.likeCount,
+      '댓글': result.commentCount,
+      '길이': formatDuration(result.duration || ''),
+      '구독자수': result.subscriberCount || 0,
+      '조회수 변화(1주일)': result.stats?.views.weekChange || 0,
+      '조회수 변화(1달)': result.stats?.views.monthChange || 0,
+      '구독자 변화(1주일)': result.stats?.subscribers.weekChange || 0,
+      '구독자 변화(1달)': result.stats?.subscribers.monthChange || 0
+    }));
+
+    // 워크시트 생성
+    const worksheet = XLSX.utils.json_to_sheet(excelData);
+    
+    // 워크북 생성 및 워크시트 추가
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, '검색 결과');
+    
+    // 파일 이름 생성 (현재 날짜 포함)
+    const fileName = `YouTube_검색결과_${new Date().toISOString().split('T')[0]}.xlsx`;
+    
+    // 엑셀 파일 다운로드
+    XLSX.writeFile(workbook, fileName);
+  };
+
+  // 페이지네이션 UI 렌더링
+  const renderPagination = () => {
+    if (totalPages <= 1) return null;
+
+    const pageNumbers = [];
+    const maxPageButtons = 5; // 한 번에 표시할 최대 페이지 버튼 수
+    
+    let startPage = Math.max(1, currentPage - Math.floor(maxPageButtons / 2));
+    let endPage = Math.min(totalPages, startPage + maxPageButtons - 1);
+    
+    if (endPage - startPage + 1 < maxPageButtons) {
+      startPage = Math.max(1, endPage - maxPageButtons + 1);
+    }
+    
+    for (let i = startPage; i <= endPage; i++) {
+      pageNumbers.push(i);
+    }
+
+    return (
+      <div className="flex justify-center items-center mt-6 mb-4 space-x-2">
+        {/* 이전 페이지 버튼 */}
+        <button
+          onClick={() => handlePageChange(Math.max(1, currentPage - 1))}
+          disabled={currentPage === 1}
+          className={`px-3 py-2 rounded-full transition-all duration-200 ${
+            currentPage === 1
+              ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
+              : 'bg-gradient-to-r from-pink-100 to-purple-100 text-pink-800 hover:from-pink-200 hover:to-purple-200'
+          }`}
+          aria-label="이전 페이지"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+        </button>
+        
+        {/* 첫 페이지 버튼 (시작 페이지가 1이 아닌 경우) */}
+        {startPage > 1 && (
+          <>
+            <button
+              onClick={() => handlePageChange(1)}
+              className="px-4 py-2 rounded-full bg-gradient-to-r from-pink-100 to-purple-100 text-pink-800 hover:from-pink-200 hover:to-purple-200 transition-all duration-200"
+            >
+              1
+            </button>
+            {startPage > 2 && <span className="px-2">...</span>}
+          </>
+        )}
+        
+        {/* 페이지 번호 버튼 */}
+        {pageNumbers.map(number => (
+          <button
+            key={number}
+            onClick={() => handlePageChange(number)}
+            className={`px-4 py-2 rounded-full transition-all duration-200 ${
+              currentPage === number
+                ? 'bg-gradient-to-r from-pink-400 to-purple-400 text-gray-800 font-bold shadow-md transform scale-105'
+                : 'bg-gradient-to-r from-pink-100 to-purple-100 text-pink-800 hover:from-pink-200 hover:to-purple-200'
+            }`}
+          >
+            {number}
+          </button>
+        ))}
+        
+        {/* 마지막 페이지 버튼 (끝 페이지가 totalPages가 아닌 경우) */}
+        {endPage < totalPages && (
+          <>
+            {endPage < totalPages - 1 && <span className="px-2">...</span>}
+            <button
+              onClick={() => handlePageChange(totalPages)}
+              className="px-4 py-2 rounded-full bg-gradient-to-r from-pink-100 to-purple-100 text-pink-800 hover:from-pink-200 hover:to-purple-200 transition-all duration-200"
+            >
+              {totalPages}
+            </button>
+          </>
+        )}
+        
+        {/* 다음 페이지 버튼 */}
+        <button
+          onClick={() => handlePageChange(Math.min(totalPages, currentPage + 1))}
+          disabled={currentPage === totalPages}
+          className={`px-3 py-2 rounded-full transition-all duration-200 ${
+            currentPage === totalPages
+              ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
+              : 'bg-gradient-to-r from-pink-100 to-purple-100 text-pink-800 hover:from-pink-200 hover:to-purple-200'
+          }`}
+          aria-label="다음 페이지"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+        </button>
+      </div>
+    );
+  };
+
+  // 아이템 개수 선택 UI 렌더링
+  const renderItemsPerPageSelector = () => {
+    const options = [10, 30, 50, 100];
+    
+    return (
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex space-x-2">
+          {options.map(option => (
+            <button
+              key={option}
+              onClick={() => handleItemsPerPageChange(option)}
+              className={`px-4 py-2 text-sm rounded-full transition-all duration-200 ${
+                itemsPerPage === option
+                  ? 'bg-gradient-to-r from-pink-400 to-purple-400 text-gray-800 font-bold shadow-md transform scale-105'
+                  : 'bg-gradient-to-r from-pink-100 to-purple-100 text-pink-800 hover:from-pink-200 hover:to-purple-200'
+              }`}
+            >
+              {option}개 표시
+            </button>
+          ))}
+        </div>
+        
+        {/* 엑셀 다운로드 버튼 */}
+        <button
+          onClick={handleExcelDownload}
+          className="px-4 py-2 bg-gradient-to-r from-pink-300 to-purple-300 text-gray-800 font-bold rounded-full hover:from-pink-400 hover:to-purple-400 transition-all duration-200 flex items-center shadow-md transform hover:scale-105"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+          엑셀 다운로드
+        </button>
+      </div>
+    );
+  };
+
+  // 필터 UI 렌더링 수정
+  const renderFilters = () => (
+    <div className="mb-6 bg-white rounded-lg shadow-md overflow-hidden">
+      {/* 필터 헤더 */}
+      <div 
+        className="p-4 cursor-pointer flex items-center justify-between hover:bg-pink-50/30 transition-colors duration-200"
+        onClick={() => setIsFilterExpanded(!isFilterExpanded)}
+      >
+        <div className="flex items-center">
+          <h2 className="text-lg font-bold text-gray-800">검색 필터</h2>
+          <span className="ml-2 text-sm text-pink-600">
+            ({filteredResults.length}개 결과)
+          </span>
+        </div>
+        <div className="flex items-center space-x-4">
+          {/* 필터 토글 버튼 */}
+          <button className="text-pink-400 hover:text-pink-600">
+            <span className={`transform transition-transform duration-200 ${isFilterExpanded ? 'rotate-180' : ''}`}>
+              ▼
+            </span>
+          </button>
+        </div>
+      </div>
+      
+      {/* 필터 내용 */}
+      {isFilterExpanded && (
+        <>
+          <div className="p-4 border-t border-pink-100">
+            <div className="space-y-4">
+              {/* 업로드 날짜 필터 */}
+              <div className="flex items-center">
+                <h3 className="text-sm font-semibold text-gray-700 min-w-[100px]">업로드 날짜</h3>
+                <div className="w-px h-5 bg-gray-300 mx-3"></div>
+                <div className="flex flex-wrap gap-2">
+                  {filterOptions.uploadDate.map(option => (
+                    <label
+                      key={option.value}
+                      className={`relative cursor-pointer px-4 py-2 rounded-full text-sm transition-all duration-200
+                        ${filters.uploadDate === option.value
+                          ? 'bg-gradient-to-r from-pink-200 to-purple-200 text-pink-800 shadow-sm'
+                          : 'bg-gray-50 text-gray-600 hover:bg-pink-50'
+                        }`}
+                    >
+                      <input
+                        type="radio"
+                        name="uploadDate"
+                        value={option.value}
+                        checked={filters.uploadDate === option.value}
+                        onChange={(e) => handleFilterChange('uploadDate', e.target.value)}
+                        className="sr-only"
+                      />
+                      {option.label}
+                    </label>
+                  ))}
+                </div>
+              </div>
+              
+              {/* 길이 필터 */}
+              <div className="flex items-center">
+                <h3 className="text-sm font-semibold text-gray-700 min-w-[100px]">길이</h3>
+                <div className="w-px h-5 bg-gray-300 mx-3"></div>
+                <div className="flex flex-wrap gap-2">
+                  {filterOptions.duration.map(option => (
+                    <label
+                      key={option.value}
+                      className={`relative cursor-pointer px-4 py-2 rounded-full text-sm transition-all duration-200
+                        ${filters.duration === option.value
+                          ? 'bg-gradient-to-r from-pink-200 to-purple-200 text-pink-800 shadow-sm'
+                          : 'bg-gray-50 text-gray-600 hover:bg-pink-50'
+                        }`}
+                    >
+                      <input
+                        type="radio"
+                        name="duration"
+                        value={option.value}
+                        checked={filters.duration === option.value}
+                        onChange={(e) => handleFilterChange('duration', e.target.value)}
+                        className="sr-only"
+                      />
+                      {option.label}
+                    </label>
+                  ))}
+                </div>
+              </div>
+              
+              {/* 형식 필터 */}
+              <div className="flex items-center">
+                <h3 className="text-sm font-semibold text-gray-700 min-w-[100px]">형식</h3>
+                <div className="w-px h-5 bg-gray-300 mx-3"></div>
+                <div className="flex flex-wrap gap-2">
+                  {filterOptions.videoFormat.map(option => (
+                    <label
+                      key={option.value}
+                      className={`relative cursor-pointer px-4 py-2 rounded-full text-sm transition-all duration-200
+                        ${filters.videoFormat === option.value
+                          ? 'bg-gradient-to-r from-pink-200 to-purple-200 text-pink-800 shadow-sm'
+                          : 'bg-gray-50 text-gray-600 hover:bg-pink-50'
+                        }`}
+                    >
+                      <input
+                        type="radio"
+                        name="videoFormat"
+                        value={option.value}
+                        checked={filters.videoFormat === option.value}
+                        onChange={(e) => handleFilterChange('videoFormat', e.target.value)}
+                        className="sr-only"
+                      />
+                      {option.label}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+          {renderSelectedFilters()}
+        </>
+      )}
+    </div>
+  );
+
+  // 정렬 아이콘 렌더링
   const renderSortIcon = (field: keyof YouTubeSearchResult) => {
     if (sortField !== field) {
       return (
@@ -312,84 +552,7 @@ export default function ResultsTable({ results }: ResultsTableProps) {
     );
   };
 
-  // 성장률 표시 함수
-  const renderGrowthBadge = (growth: string | undefined) => {
-    if (!growth) return 'N/A';
-    
-    const isPositive = growth.includes('+');
-    return (
-      <span className={`px-2 py-1 text-xs rounded-full font-medium ${
-        isPositive 
-          ? 'bg-green-100 text-green-800' 
-          : 'bg-red-100 text-red-800'
-      }`}>
-        {growth}
-      </span>
-    );
-  };
-
-  // 구독자 변화 표시 함수
-  const renderSubscriberChange = (result: YouTubeSearchResult) => {
-    return 'N/A';
-  };
-
-  // 구독자 변화율 표시 함수
-  const renderSubscriberChangePercentage = (result: YouTubeSearchResult) => {
-    return 'N/A';
-  };
-
-  // 참여율 표시 함수
-  const renderEngagementRate = (rate: number | undefined) => {
-    return 'N/A';
-  };
-
-  // 콘텐츠 타입별 조회수 비율 표시 함수
-  const renderContentTypeRatio = (result: YouTubeSearchResult) => {
-    return 'N/A';
-  };
-
-  // 일일 평균 통계 표시 함수
-  const renderDailyAverage = (result: YouTubeSearchResult, type: 'subscribers' | 'views' | 'revenue') => {
-    return 'N/A';
-  };
-
-  // 조회수 성장률 표시 함수
-  const renderViewsGrowth = (result: YouTubeSearchResult) => {
-    return 'N/A';
-  };
-
-  // 스타일 추가
-  useEffect(() => {
-    // 커스텀 스크롤바 스타일 추가
-    const style = document.createElement('style');
-    style.textContent = `
-      .custom-scrollbar::-webkit-scrollbar {
-        width: 12px;
-        height: 12px;
-      }
-      .custom-scrollbar::-webkit-scrollbar-track {
-        background: #fff5f7;
-        border-radius: 10px;
-      }
-      .custom-scrollbar::-webkit-scrollbar-thumb {
-        background: linear-gradient(to bottom, #f687b3, #d53f8c);
-        border-radius: 10px;
-        border: 3px solid #fff5f7;
-      }
-      .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-        background: linear-gradient(to bottom, #ed64a6, #b83280);
-      }
-      .custom-scrollbar::-webkit-scrollbar-corner {
-        background: #fff5f7;
-      }
-    `;
-    document.head.appendChild(style);
-    
-    return () => {
-      document.head.removeChild(style);
-    };
-  }, []);
-
+  // 태그 토글 함수
   const toggleTags = (resultId: string) => {
     setExpandedTags(prev => ({
       ...prev,
@@ -397,6 +560,7 @@ export default function ResultsTable({ results }: ResultsTableProps) {
     }));
   };
 
+  // 주제 토글 함수
   const toggleTopics = (resultId: string) => {
     setExpandedTopics(prev => ({
       ...prev,
@@ -472,160 +636,84 @@ export default function ResultsTable({ results }: ResultsTableProps) {
     );
   };
 
-  // 선택된 필터 표시 컴포넌트
+  // 선택된 필터 표시
   const renderSelectedFilters = () => {
-    const selectedFilters = Object.entries(filters)
-      .filter(([_, value]) => value !== '')
-      .map(([type, value]) => {
-        const option = filterOptions[type as keyof typeof filterOptions]
-          .find(opt => opt.value === value);
-        return {
-          type,
-          label: option?.label || '',
-          value
-        };
-      });
-
+    const selectedFilters = [];
+    
+    // 업로드 날짜 필터
+    if (filters.uploadDate) {
+      const option = filterOptions.uploadDate.find(opt => opt.value === filters.uploadDate);
+      if (option) {
+        selectedFilters.push({
+          type: 'uploadDate',
+          label: `업로드 날짜: ${option.label}`
+        });
+      }
+    }
+    
+    // 길이 필터
+    if (filters.duration) {
+      const option = filterOptions.duration.find(opt => opt.value === filters.duration);
+      if (option) {
+        selectedFilters.push({
+          type: 'duration',
+          label: `길이: ${option.label}`
+        });
+      }
+    }
+    
+    // 형식 필터
+    if (filters.videoFormat) {
+      const option = filterOptions.videoFormat.find(opt => opt.value === filters.videoFormat);
+      if (option) {
+        selectedFilters.push({
+          type: 'videoFormat',
+          label: `형식: ${option.label}`
+        });
+      }
+    }
+    
     if (selectedFilters.length === 0) return null;
-
-  return (
+    
+    return (
       <div className="px-4 py-3 bg-pink-50/50 border-t border-pink-100">
-        <div className="flex flex-wrap gap-2">
-          {selectedFilters.map((filter) => (
-            <div
-              key={`${filter.type}-${filter.value}`}
-              className="flex items-center gap-2 px-3 py-1.5 bg-white rounded-full shadow-sm border border-pink-200"
+        <div className="flex flex-wrap gap-2 items-center">
+          <span className="text-xs font-medium text-gray-500">적용된 필터:</span>
+          {selectedFilters.map(filter => (
+            <div 
+              key={filter.type}
+              className="flex items-center bg-pink-100 text-pink-700 px-3 py-1 rounded-full text-xs"
             >
-              <span className="text-sm text-pink-700">{filter.label}</span>
+              <span>{filter.label}</span>
               <button
+                className="ml-2 text-pink-500 hover:text-pink-700"
                 onClick={() => handleFilterChange(filter.type as keyof FilterState, '')}
-                className="text-pink-400 hover:text-pink-600 transition-colors"
               >
                 ×
               </button>
             </div>
           ))}
+          {selectedFilters.length > 0 && (
+            <button
+              className="text-xs text-pink-600 hover:text-pink-800 underline"
+              onClick={() => {
+                setFilters({
+                  uploadDate: '',
+                  duration: '',
+                  videoFormat: ''
+                });
+              }}
+            >
+              모두 지우기
+            </button>
+          )}
         </div>
       </div>
     );
   };
 
-  // 필터 UI 렌더링 수정
-  const renderFilters = () => (
-    <div className="mb-6 bg-white rounded-lg shadow-md overflow-hidden">
-      {/* 필터 헤더 */}
-      <div 
-        className="p-4 cursor-pointer flex items-center justify-between hover:bg-pink-50/30 transition-colors duration-200"
-        onClick={() => setIsFilterExpanded(!isFilterExpanded)}
-            >
-              <div className="flex items-center">
-          <h2 className="text-lg font-bold text-gray-800">검색 필터</h2>
-          <span className="ml-2 text-sm text-pink-600">
-            ({filteredResults.length}개 결과)
-          </span>
-        </div>
-        <button className="text-pink-400 hover:text-pink-600">
-          <span className={`transform transition-transform duration-200 ${isFilterExpanded ? 'rotate-180' : ''}`}>
-            ▼
-          </span>
-        </button>
-      </div>
-
-      {/* 필터 내용 */}
-      {isFilterExpanded && (
-        <>
-          <div className="p-4 border-t border-pink-100">
-            <div className="space-y-6">
-              {/* 업로드 날짜 필터 */}
-              <div>
-                <h3 className="text-sm font-semibold mb-3 text-gray-700">업로드 날짜</h3>
-                <div className="flex flex-wrap gap-2">
-                  {filterOptions.uploadDate.map(option => (
-                    <label
-                      key={option.value}
-                      className={`relative cursor-pointer px-4 py-2 rounded-full text-sm transition-all duration-200
-                        ${filters.uploadDate === option.value
-                          ? 'bg-pink-100 text-pink-700 shadow-sm'
-                          : 'bg-gray-50 text-gray-600 hover:bg-pink-50'
-                        }`}
-                    >
-                      <input
-                        type="radio"
-                        name="uploadDate"
-                        value={option.value}
-                        checked={filters.uploadDate === option.value}
-                        onChange={(e) => handleFilterChange('uploadDate', e.target.value)}
-                        className="sr-only"
-                      />
-                      {option.label}
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              {/* 길이 필터 */}
-              <div>
-                <h3 className="text-sm font-semibold mb-3 text-gray-700">길이</h3>
-                <div className="flex flex-wrap gap-2">
-                  {filterOptions.duration.map(option => (
-                    <label
-                      key={option.value}
-                      className={`relative cursor-pointer px-4 py-2 rounded-full text-sm transition-all duration-200
-                        ${filters.duration === option.value
-                          ? 'bg-pink-100 text-pink-700 shadow-sm'
-                          : 'bg-gray-50 text-gray-600 hover:bg-pink-50'
-                        }`}
-                    >
-                      <input
-                        type="radio"
-                        name="duration"
-                        value={option.value}
-                        checked={filters.duration === option.value}
-                        onChange={(e) => handleFilterChange('duration', e.target.value)}
-                        className="sr-only"
-                      />
-                      {option.label}
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              {/* 형식 필터 */}
-              <div>
-                <h3 className="text-sm font-semibold mb-3 text-gray-700">형식</h3>
-                <div className="flex flex-wrap gap-2">
-                  {filterOptions.videoFormat.map(option => (
-                    <label
-                      key={option.value}
-                      className={`relative cursor-pointer px-4 py-2 rounded-full text-sm transition-all duration-200
-                        ${filters.videoFormat === option.value
-                          ? 'bg-pink-100 text-pink-700 shadow-sm'
-                          : 'bg-gray-50 text-gray-600 hover:bg-pink-50'
-                        }`}
-                    >
-                      <input
-                        type="radio"
-                        name="videoFormat"
-                        value={option.value}
-                        checked={filters.videoFormat === option.value}
-                        onChange={(e) => handleFilterChange('videoFormat', e.target.value)}
-                        className="sr-only"
-                      />
-                      {option.label}
-                    </label>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-          {renderSelectedFilters()}
-        </>
-      )}
-    </div>
-  );
-
   // 테이블 셀 렌더링 함수
-  const renderCell = (result: YouTubeSearchResult, col: ColumnDefinition): React.ReactElement => {
+  const renderCell = (col: ColumnDefinition, result: YouTubeSearchResult): React.ReactElement => {
     switch (col.id) {
       case 'thumbnail':
         return (
@@ -786,7 +874,7 @@ export default function ResultsTable({ results }: ResultsTableProps) {
                     <span className="text-xs">{device}: {percentage}%</span>
                   </div>
                 ))}
-                  </div>
+              </div>
             )}
           </td>
         );
@@ -890,9 +978,9 @@ export default function ResultsTable({ results }: ResultsTableProps) {
                       <span className="text-xs">{country}: {percentage.toFixed(1)}%</span>
                     </div>
                   ))}
-                  </div>
-                )}
-              </td>
+              </div>
+            )}
+          </td>
         );
       case 'demographics':
         return (
@@ -902,8 +990,8 @@ export default function ResultsTable({ results }: ResultsTableProps) {
                 <div>인구통계: {result.demographics.population.toLocaleString()}</div>
                 <div>인구밀도: {result.demographics.populationDensity.toLocaleString()} people/km²</div>
               </div>
-                )}
-              </td>
+            )}
+          </td>
         );
       case 'viewingPatterns':
         return (
@@ -914,13 +1002,13 @@ export default function ResultsTable({ results }: ResultsTableProps) {
                 <div>실시간 시청: {result.viewingPatterns.livePercentage.toFixed(1)}%</div>
               </div>
             )}
-              </td>
+          </td>
         );
       case 'contentReach':
         return (
           <td key={col.id} className="px-4 py-4">
             {result.contentReach?.toFixed(1)}%
-                  </td>
+          </td>
         );
       case 'trafficSources':
         return (
@@ -933,8 +1021,8 @@ export default function ResultsTable({ results }: ResultsTableProps) {
                   </div>
                 ))}
               </div>
-                    )}
-                  </td>
+            )}
+          </td>
         );
       case 'deviceStats':
         return (
@@ -948,13 +1036,13 @@ export default function ResultsTable({ results }: ResultsTableProps) {
                 ))}
               </div>
             )}
-                  </td>
+          </td>
         );
       default:
         return (
           <td key={col.id} className="px-4 py-4">
             {String(result[col.id as keyof YouTubeSearchResult] || '-')}
-                  </td>
+          </td>
         );
     }
   };
@@ -1061,40 +1149,71 @@ export default function ResultsTable({ results }: ResultsTableProps) {
     }
   ];
 
-  // 콘텐츠 타입에 따른 컬럼 선택 제거
-  const visibleColumns = videoColumns;
+  // 콘텐츠 타입에 따른 컬럼 선택
+  const columns = videoColumns;
 
   // 테이블 너비 계산
-  const tableWidth = visibleColumns.reduce((acc, col) => {
+  const tableWidth = columns.reduce((acc, col) => {
     const width = parseInt(col.width);
     return acc + (isNaN(width) ? 100 : width);
   }, 0);
 
+  // 스크롤 동기화 함수 추가
+  useEffect(() => {
+    const handleScroll = () => {
+      if (scrollContainerRef.current) {
+        const scrollLeft = scrollContainerRef.current.scrollLeft;
+        const headerTable = document.querySelector('.header-table');
+        if (headerTable) {
+          (headerTable as HTMLElement).style.transform = `translateX(-${scrollLeft}px)`;
+        }
+      }
+    };
+
+    const scrollContainer = scrollContainerRef.current;
+    if (scrollContainer) {
+      scrollContainer.addEventListener('scroll', handleScroll);
+    }
+
+    return () => {
+      if (scrollContainer) {
+        scrollContainer.removeEventListener('scroll', handleScroll);
+      }
+    };
+  }, []);
+
   return (
     <div className="overflow-hidden" ref={tableRef}>
       {renderFilters()}
+      
+      {/* 페이지당 항목 수 선택 */}
+      <div className="flex justify-center items-center mb-4">
+        {renderItemsPerPageSelector()}
+      </div>
+      
       <div className="relative">
         {/* 테이블 헤더 (고정) */}
-        <div className="sticky top-0 z-30 bg-gradient-to-r from-pink-50 to-purple-50 shadow-md border-b border-pink-100 overflow-hidden">
+        <div className="sticky top-0 z-30 bg-gradient-to-r from-pink-50 to-purple-50 shadow-md border-b border-pink-100">
           <div className="header-table" style={{ width: `${tableWidth}px`, minWidth: '100%' }}>
             <table className="w-full" style={{ tableLayout: 'fixed' }}>
               <colgroup>
-                {visibleColumns.map(col => (
+                {columns.map(col => (
                   <col key={col.id} style={{ width: col.width }} />
                 ))}
               </colgroup>
               <thead>
                 <tr className="border-b border-pink-100">
-                  {visibleColumns.map(col => (
+                  {columns.map(col => (
                     <th 
                       key={col.id}
                       className={`px-6 py-5 text-left text-sm font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap ${
-                        col.sortable ? 'cursor-pointer hover:bg-pink-100 transition-colors duration-200' : ''
+                        col.sortable ? 'cursor-pointer hover:bg-pink-50/50' : ''
                       }`}
-                      onClick={() => col.sortable && col.field && handleSort(col.field as keyof YouTubeSearchResult)}
+                      onClick={() => col.sortable && col.field && handleSort(col.field)}
                     >
                       <div className="flex items-center">
-                        {col.label} {col.sortable && col.field && renderSortIcon(col.field as keyof YouTubeSearchResult)}
+                        {col.label}
+                        {col.sortable && col.field && renderSortIcon(col.field)}
                       </div>
                     </th>
                   ))}
@@ -1106,52 +1225,47 @@ export default function ResultsTable({ results }: ResultsTableProps) {
         
         {/* 테이블 본문 (스크롤 가능) */}
         <div 
+          className="overflow-x-auto"
           ref={scrollContainerRef}
-          className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-200px)] custom-scrollbar"
-          style={{ width: '100%' }}
+          style={{ maxHeight: 'calc(100vh - 300px)' }}
         >
           <div style={{ width: `${tableWidth}px`, minWidth: '100%' }}>
             <table className="w-full" style={{ tableLayout: 'fixed' }}>
               <colgroup>
-                {visibleColumns.map(col => (
+                {columns.map(col => (
                   <col key={col.id} style={{ width: col.width }} />
                 ))}
               </colgroup>
-              <tbody className="bg-white divide-y divide-pink-100">
-                {displayedResults.map((result, index) => (
-                  <tr 
-                    key={result.id} 
-                    className={`hover:bg-pink-50 transition-colors duration-200 ${index % 2 === 0 ? 'bg-white' : 'bg-pink-50/30'}`}
-                  >
-                    {visibleColumns.map(col => renderCell(result, col))}
-            </tr>
-          ))}
+              <tbody>
+                {displayedResults.length > 0 ? (
+                  displayedResults.map((result, index) => (
+                    <tr 
+                      key={`${result.id}-${index}`}
+                      className={`hover:bg-pink-50 transition-colors duration-200 ${index % 2 === 0 ? 'bg-white' : 'bg-pink-50/30'}`}
+                    >
+                      {columns.map(col => renderCell(col, result))}
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={columns.length} className="px-6 py-10 text-center text-gray-500">
+                      검색 결과가 없습니다.
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
         </div>
-        
-        {/* 무한 스크롤 로딩 인디케이터 */}
-        <div ref={loadMoreRef} className="py-4 text-center">
-          {isLoading && (
-            <div className="flex justify-center items-center py-4">
-              <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-pink-500"></div>
-                </div>
-          )}
-          {!isLoading && displayedResults.length < filteredResults.length && (
-            <button 
-              onClick={loadMoreItems}
-              className="px-4 py-2 bg-pink-100 text-pink-700 rounded-lg hover:bg-pink-200 transition-colors duration-200"
-            >
-              더 보기 ({displayedResults.length}/{filteredResults.length})
-            </button>
-          )}
-        </div>
       </div>
       
-      {filteredResults.length === 0 && (
-        <div className="py-8 text-center">
-          <p className="text-gray-500">검색 결과가 없습니다.</p>
+      {/* 페이지네이션 */}
+      {renderPagination()}
+      
+      {/* 로딩 인디케이터 */}
+      {isLoading && (
+        <div className="py-4 text-center">
+          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-pink-400 border-r-transparent"></div>
         </div>
       )}
     </div>

@@ -5,12 +5,6 @@ import Link from 'next/link';
 import { usePathname, useSearchParams, useRouter } from 'next/navigation';
 import { useSession, signOut } from 'next-auth/react';
 
-interface SearchLimit {
-  remainingSearches: number;
-  totalLimit: number;
-  resetAt: string;
-}
-
 export default function Navbar() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -20,23 +14,7 @@ export default function Navbar() {
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [query, setQuery] = useState(searchParams.get('q') || '');
   const [isLoading, setIsLoading] = useState(false);
-  const [searchLimit, setSearchLimit] = useState<SearchLimit | null>(null);
   const profileMenuRef = useRef<HTMLDivElement>(null);
-
-  // 검색 제한 정보 가져오기
-  useEffect(() => {
-    if (session && pathname.includes('/search')) {
-      fetch('/api/search-limit')
-        .then(res => {
-          if (!res.ok) {
-            throw new Error('검색 제한 정보를 가져오는데 실패했습니다.');
-          }
-          return res.json();
-        })
-        .then(data => setSearchLimit(data))
-        .catch(err => console.error('검색 제한 정보를 가져오는 중 오류 발생:', err));
-    }
-  }, [session, pathname]);
 
   // 검색 파라미터가 변경될 때 쿼리 상태 업데이트
   useEffect(() => {
@@ -135,16 +113,6 @@ export default function Navbar() {
               </div>
             </div>
           </div>
-
-          {/* 남은 검색 횟수 표시 */}
-          {searchLimit && pathname.includes('/search') && (
-            <div className="hidden md:flex mr-4">
-              <div className="bg-white px-3 py-1.5 rounded-full text-sm text-gray-600 shadow-sm border border-pink-100 flex items-center whitespace-nowrap">
-                <span className="font-medium mr-1">남은 검색:</span> 
-                <span className="text-pink-600 font-bold">{searchLimit.remainingSearches}/{searchLimit.totalLimit}</span>
-              </div>
-            </div>
-          )}
 
           {/* 사용자 메뉴 */}
           <div className="flex items-center">
@@ -259,16 +227,6 @@ export default function Navbar() {
                   )}
                 </button>
               </div>
-              
-              {/* 모바일 남은 검색 횟수 */}
-              {searchLimit && pathname.includes('/search') && (
-                <div className="mt-2 flex justify-center">
-                  <div className="bg-white px-3 py-1.5 rounded-full text-sm text-gray-600 shadow-sm border border-pink-100 flex items-center whitespace-nowrap">
-                    <span className="font-medium mr-1">남은 검색:</span> 
-                    <span className="text-pink-600 font-bold">{searchLimit.remainingSearches}/{searchLimit.totalLimit}</span>
-                  </div>
-                </div>
-              )}
             </div>
             
             <div className="flex flex-col space-y-2 px-2 pb-3 mt-2">

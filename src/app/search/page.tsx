@@ -3,14 +3,8 @@
 import React, { useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
-import { searchYouTube, type YouTubeSearchResult } from '@/lib/youtube';
+import { searchYouTube, type YouTubeSearchResult, type YouTubeSearchResponse } from '@/lib/youtube';
 import ResultsTable from '@/components/results-table';
-
-interface SearchLimit {
-  remainingSearches: number;
-  totalLimit: number;
-  resetAt: string;
-}
 
 export default function SearchPage() {
   const searchParams = useSearchParams();
@@ -18,27 +12,13 @@ export default function SearchPage() {
   const { data: session } = useSession();
   
   const [results, setResults] = useState<YouTubeSearchResult[]>([]);
+  const [totalResults, setTotalResults] = useState<number>(0);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [searchLimit, setSearchLimit] = useState<SearchLimit | null>(null);
-
-  // 검색 제한 정보 가져오기
-  useEffect(() => {
-    if (session) {
-      fetch('/api/search-limit')
-        .then(res => {
-          if (!res.ok) {
-            throw new Error('검색 제한 정보를 가져오는데 실패했습니다.');
-          }
-          return res.json();
-        })
-        .then(data => setSearchLimit(data))
-        .catch(err => console.error('검색 제한 정보를 가져오는 중 오류 발생:', err));
-    }
-  }, [session]);
+  const [hasMoreResults, setHasMoreResults] = useState(false);
 
   // 검색 실행
-  const fetchResults = async () => {
+  const fetchResults = async (offset: number = 0, limit: number = 100) => {
     if (!query.trim()) return;
     
     // 로그인 확인
@@ -47,40 +27,32 @@ export default function SearchPage() {
       return;
     }
     
-    // 검색 제한 확인
-    if (searchLimit && searchLimit.remainingSearches <= 0) {
-      const resetDate = searchLimit.resetAt ? new Date(searchLimit.resetAt) : null;
-      const resetDateStr = resetDate && !isNaN(resetDate.getTime()) 
-        ? resetDate.toLocaleString('ko-KR') 
-        : '다음 날';
-      
-      setError(`일일 검색 한도에 도달했습니다. ${resetDateStr} 이후에 다시 시도해주세요.`);
-      return;
-    }
-    
     setIsLoading(true);
     setError(null);
     
     try {
       // 검색 실행
-      const data = await searchYouTube(query);
-      setResults(data);
+      const response = await searchYouTube(query, limit, offset);
+      console.log('검색 결과:', response);
       
-      // 검색 제한 업데이트
-      if (session) {
-        const response = await fetch('/api/search-limit', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
+      // 응답이 객체인 경우 (API 응답 형식)
+      if (response && response.results) {
+        if (response.results.length > 0) {
+          if (offset === 0) {
+            // 첫 페이지 로드
+            setResults(response.results);
+          } else {
+            // 추가 결과 로드
+            setResults(prevResults => [...prevResults, ...response.results]);
           }
-        });
-        
-        if (response.ok) {
-          const updatedLimit = await response.json();
-          setSearchLimit(updatedLimit);
-        } else {
-          console.error('검색 제한 업데이트 실패:', await response.text());
+          
+          setTotalResults(response.total);
+          setHasMoreResults(response.total > offset + response.results.length);
+        } else if (offset === 0) {
+          setError('검색 결과가 없습니다. 다른 검색어로 시도해보세요.');
         }
+      } else {
+        setError('검색 결과가 없습니다. 다른 검색어로 시도해보세요.');
       }
     } catch (err) {
       setError('검색 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.');
@@ -93,7 +65,7 @@ export default function SearchPage() {
   // 초기 검색 실행
   useEffect(() => {
     if (query) {
-      fetchResults();
+      fetchResults(0, 100);
     }
   }, [query]);
 

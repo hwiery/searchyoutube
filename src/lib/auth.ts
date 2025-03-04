@@ -7,6 +7,7 @@ declare module 'next-auth' {
   interface Session {
     user: {
       id?: string;
+      isPremium?: boolean;
     } & DefaultSession['user']
   }
 }
@@ -35,6 +36,8 @@ export const authOptions: AuthOptions = {
     async session({ session, token }) {
       if (token && session.user) {
         session.user.id = token.sub;
+        // 개발 환경에서는 모든 사용자에게 프리미엄 권한 부여
+        session.user.isPremium = process.env.NODE_ENV === 'development' ? true : (token.isPremium as boolean);
       }
       return session;
     },
@@ -42,6 +45,8 @@ export const authOptions: AuthOptions = {
       if (user) {
         token.id = user.id;
       }
+      // 개발 환경에서는 모든 사용자에게 프리미엄 권한 부여
+      token.isPremium = process.env.NODE_ENV === 'development' ? true : (token.isPremium || false);
       return token;
     },
   },

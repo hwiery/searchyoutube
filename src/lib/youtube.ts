@@ -14,6 +14,7 @@ const YOUTUBE_ANALYTICS_API_BASE_URL = 'https://youtubeanalytics.googleapis.com/
 
 export interface YouTubeSearchResult {
   id: string;
+  videoId?: string;
   title: string;
   description: string;
   thumbnailUrl: string;
@@ -30,6 +31,7 @@ export interface YouTubeSearchResult {
   subscriberCount?: number;
   videoCount?: number;
   tags?: string[];
+  categoryId?: string;
   topicDetails?: Array<{ name: string; wikiPath: string | null }>;
   trafficSources?: Record<string, number>;
   deviceStats?: Record<string, number>;
@@ -87,12 +89,11 @@ export interface YouTubeSearchResult {
 }
 
 export interface YouTubeSearchResponse {
-  items: YouTubeSearchResult[];
-  nextPageToken?: string;
-  pageInfo: {
-    totalResults: number;
-    resultsPerPage: number;
-  };
+  results: YouTubeSearchResult[];
+  total: number;
+  limit: number;
+  offset: number;
+  isPremium: boolean;
 }
 
 export interface YouTubeChannelDetail {
@@ -239,110 +240,35 @@ function generateRetentionStats() {
   };
 }
 
-export async function searchYouTube(query: string): Promise<YouTubeSearchResult[]> {
-  if (!YOUTUBE_API_KEY) {
-    throw new Error('YouTube API 키가 설정되지 않았습니다. .env.local 파일에 NEXT_PUBLIC_YOUTUBE_API_KEY를 설정해주세요.');
-  }
-
+export async function searchYouTube(
+  query: string,
+  limit: number = 100,
+  offset: number = 0
+): Promise<YouTubeSearchResponse> {
   try {
-    // 기본 검색 결과 가져오기
-    const searchResponse = await fetch(
-      `${YOUTUBE_API_BASE_URL}/search?part=snippet&q=${encodeURIComponent(
-        query
-      )}&key=${YOUTUBE_API_KEY}&maxResults=50&type=video`
+    // 검색 API 호출
+    const response = await fetch(
+      `/api/search?q=${encodeURIComponent(query)}&limit=${limit}&offset=${offset}`,
+      {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      }
     );
-    
-    if (!searchResponse.ok) {
-      const errorData = await searchResponse.json();
-      throw new Error(`YouTube API 오류: ${errorData.error?.message || '알 수 없는 오류가 발생했습니다.'}`);
+
+    if (!response.ok) {
+      throw new Error(`검색 API 오류: ${response.status} ${response.statusText}`);
     }
 
-    const searchData = await searchResponse.json();
-    const items = searchData.items || [];
-
-    // 결과 매핑 및 추가 데이터 가져오기
-    const results = await Promise.all(
-      items.map(async (item: any) => {
-        const videoId = item.id.videoId;
-        
-        // 기본 정보 구성
-        const result: YouTubeSearchResult = {
-          id: videoId,
-          title: item.snippet.title,
-          description: item.snippet.description,
-          thumbnailUrl: item.snippet.thumbnails.high?.url || item.snippet.thumbnails.default?.url,
-          publishedAt: item.snippet.publishedAt,
-          channelId: item.snippet.channelId,
-          channelTitle: item.snippet.channelTitle,
-          viewCount: 0,
-          likeCount: 0,
-          commentCount: 0
-        };
-
-        try {
-          // 비디오 상세 정보 가져오기
-          const videoResponse = await fetch(
-            `${YOUTUBE_API_BASE_URL}/videos?part=statistics,contentDetails,topicDetails,status&id=${videoId}&key=${YOUTUBE_API_KEY}`
-          );
-          
-          if (videoResponse.ok) {
-            const videoData = await videoResponse.json();
-            const videoItem = videoData.items?.[0];
-            
-            if (videoItem) {
-              // 통계 정보
-              result.viewCount = parseInt(videoItem.statistics?.viewCount || '0');
-              result.likeCount = parseInt(videoItem.statistics?.likeCount || '0');
-              result.commentCount = parseInt(videoItem.statistics?.commentCount || '0');
-              
-              // 콘텐츠 상세
-              result.duration = videoItem.contentDetails?.duration;
-              result.definition = videoItem.contentDetails?.definition;
-              result.caption = videoItem.contentDetails?.caption === 'true';
-              
-              // 주제 상세
-              if (videoItem.topicDetails?.topicCategories) {
-                result.topicDetails = videoItem.topicDetails.topicCategories.map((topic: string) => {
-                  const name = topic.split('/').pop() || '';
-                  return {
-                    name,
-                    wikiPath: name
-                  };
-                });
-              }
-            }
-          }
-
-          // 채널 구독자 수 가져오기
-          const channelResponse = await fetch(
-            `${YOUTUBE_API_BASE_URL}/channels?part=statistics&id=${result.channelId}&key=${YOUTUBE_API_KEY}`
-          );
-          
-          if (channelResponse.ok) {
-            const channelData = await channelResponse.json();
-            const channelItem = channelData.items?.[0];
-            
-            if (channelItem) {
-              result.subscriberCount = parseInt(channelItem.statistics?.subscriberCount || '0');
-              result.videoCount = parseInt(channelItem.statistics?.videoCount || '0');
-            }
-          }
-
-          // 통계 데이터 가져오기
-          const stats = await getVideoAndChannelStats(videoId, result.channelId);
-          result.stats = stats;
-
-        } catch (error) {
-          console.error(`Error fetching additional data for ${videoId}:`, error);
-        }
-
-        return result;
-      })
-    );
-
-    return results;
+    // 응답 데이터 파싱
+    const data = await response.json();
+    console.log('API 응답 데이터:', data); // 디버깅용 로그 추가
+    
+    // API 응답 그대로 반환
+    return data;
   } catch (error) {
-    console.error('Error searching YouTube:', error);
+    console.error('YouTube 검색 오류:', error);
     throw error;
   }
 }
