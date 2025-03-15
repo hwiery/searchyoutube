@@ -1,36 +1,120 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# SearchYoutube
 
-## Getting Started
+YouTube 콘텐츠 분석 및 검색 플랫폼
 
-First, run the development server:
+## 서비스 소개
 
+SearchYoutube는 YouTube의 방대한 콘텐츠를 효율적으로 검색하고 분석할 수 있는 도구입니다. 채널과 동영상의 상세 데이터를 제공하여 콘텐츠 제작자, 마케터, 연구자들이 YouTube 생태계를 더 잘 이해하고 인사이트를 얻을 수 있도록 돕습니다.
+
+### 주요 기능
+
+- **고급 검색 필터링**
+  - 업로드 날짜 (지난 1시간/오늘/이번 주/이번 달/올해)
+  - 동영상 길이 (4분 미만/4-20분/20분 초과)
+  - 동영상 형식 (Shorts/일반 동영상)
+  - 하이라이트 필터 (바이럴/급성장/트렌딩 콘텐츠)
+
+- **하이라이트 기능**
+  - 바이럴 콘텐츠: 구독자 수 대비 높은 조회수 기록
+  - 급성장 채널: 빠른 구독자 증가율
+  - 트렌딩 콘텐츠: 높은 조회수 증가율
+
+- **상세 데이터 분석**
+  - 조회수/구독자 변화 추이 (주간/월간)
+  - 좋아요, 댓글 수 통계
+  - 채널 성장률 분석
+
+## 시작하기
+
+### 필수 요구사항
+
+- Node.js 18.0.0 이상
+- YouTube Data API v3 API 키
+- 환경 설정 파일 (.env.local)
+
+### 환경 설정
+
+1. 프로젝트 클론
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+git clone https://github.com/yourusername/searchyoutube.git
+cd searchyoutube
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+2. 의존성 설치
+```bash
+npm install
+```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+3. 환경 변수 설정
+`.env.local` 파일을 생성하고 다음 변수들을 설정하세요:
+```
+YOUTUBE_API_KEY=your_api_key_here
+NEXTAUTH_SECRET=your_nextauth_secret
+NEXTAUTH_URL=http://localhost:3000
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+4. 개발 서버 실행
+```bash
+npm run dev
+```
 
-## Learn More
+## 사용 제한 사항
 
-To learn more about Next.js, take a look at the following resources:
+### API 사용량 제한
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- YouTube Data API는 일일 할당량이 제한되어 있습니다
+- 기본 무료 할당량: 일일 10,000 units
+- 검색 API 호출당 100 units 사용
+- 사용자당 일일 검색 횟수 제한 있음
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### 검색 제한
 
-## Deploy on Vercel
+- 로그인 필요
+- 사용자당 일일 검색 횟수 제한
+- 검색 결과는 최대 50개까지 표시
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## 주요 기능 사용법
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### 검색 필터 활용
+
+1. **업로드 날짜 필터**
+   - 최신 콘텐츠 검색을 위한 시간대별 필터링
+   - 실시간 트렌드 파악에 유용
+
+2. **동영상 길이 필터**
+   - Shorts와 일반 동영상 구분
+   - 콘텐츠 길이별 성과 분석
+
+3. **하이라이트 필터**
+   - 바이럴 콘텐츠: 구독자 수의 3배 이상 조회수
+   - 급성장: 주간 30% 이상 구독자 증가
+   - 트렌딩: 주간 100% 이상 조회수 증가
+
+### 데이터 분석
+
+- 엑셀 다운로드 기능으로 상세 분석 가능
+- 주간/월간 성장률 비교
+- 채널별 성과 추적
+
+## 업데이트 내역
+
+### 최신 버전 (1.0.0)
+- 초기 릴리즈
+- 기본 검색 및 필터링 기능
+- 데이터 분석 도구 추가
+
+### 예정된 업데이트
+- 채널 분석 기능 강화
+- 실시간 알림 시스템
+- 커스텀 대시보드
+
+## 기여하기
+
+프로젝트 개선에 참여하고 싶으시다면:
+1. 이슈 등록
+2. 풀 리퀘스트 제출
+3. 코드 리뷰 참여
+
+## 라이선스
+
+이 프로젝트는 MIT 라이선스를 따릅니다.
