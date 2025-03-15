@@ -18,6 +18,7 @@ interface ColumnDefinition {
   label: string;
   sortable: boolean;
   field?: keyof YouTubeSearchResult;
+  path?: string[];
 }
 
 // 필터 상태를 위한 인터페이스 수정
@@ -25,11 +26,35 @@ interface FilterState {
   uploadDate: string;
   duration: string;
   videoFormat: string;
+  highlight: string;
 }
 
+interface SortField {
+  field: string;
+  path: string[];
+}
+
+interface ContentHighlight {
+  type: string;
+  label: string;
+  color: string;
+  description: string;
+}
+
+// 하이라이트 기준 정의
+const HIGHLIGHT_CRITERIA = {
+  VIRAL_VIEW_RATE: 3,
+  WEEKLY_SUB_GROWTH_RATE: 0.3,
+  MONTHLY_SUB_GROWTH_RATE: 0.5,
+  WEEKLY_VIEW_GROWTH_RATE: 1,
+  MONTHLY_VIEW_GROWTH_RATE: 2,
+};
+
 export default function ResultsTable({ results }: ResultsTableProps) {
-  const [sortField, setSortField] = useState<keyof YouTubeSearchResult>('publishedAt');
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
+  const [sortConfig, setSortConfig] = useState<{ field: string; direction: 'asc' | 'desc' }>({
+    field: 'publishedAt',
+    direction: 'desc'
+  });
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10); // 기본값 10개로 설정
   const [displayedResults, setDisplayedResults] = useState<YouTubeSearchResult[]>([]);
@@ -37,7 +62,8 @@ export default function ResultsTable({ results }: ResultsTableProps) {
   const [filters, setFilters] = useState<FilterState>({
     uploadDate: '',
     duration: '',
-    videoFormat: ''
+    videoFormat: '',
+    highlight: ''
   });
   const tableRef = useRef<HTMLDivElement>(null);
   const observerRef = useRef<IntersectionObserver | null>(null);
@@ -68,6 +94,17 @@ export default function ResultsTable({ results }: ResultsTableProps) {
       { value: '', label: '전체' },
       { value: 'shorts', label: 'Shorts' },
       { value: 'long', label: 'Long' }
+    ],
+    highlight: [
+      { value: '', label: '전체' },
+      { value: 'any', label: '주목할 만한 콘텐츠' },
+      { value: 'viral', label: '바이럴 콘텐츠' },
+      { value: 'growing', label: '급성장 채널' },
+      { value: 'trending', label: '트렌딩 콘텐츠' },
+      { value: 'viral+growing', label: '바이럴 + 급성장' },
+      { value: 'viral+trending', label: '바이럴 + 트렌딩' },
+      { value: 'growing+trending', label: '급성장 + 트렌딩' },
+      { value: 'viral+growing+trending', label: '바이럴 + 급성장 + 트렌딩' }
     ]
   };
 
@@ -172,16 +209,120 @@ export default function ResultsTable({ results }: ResultsTableProps) {
     return hours * 3600 + minutes * 60 + seconds;
   };
 
+  // 하이라이트 타입을 체크하는 함수
+  const getHighlightTypes = (result: YouTubeSearchResult): string[] => {
+    const highlights: string[] = [];
+    
+    // 바이럴 콘텐츠 체크
+    if (result.viewCount && result.subscriberCount && 
+        result.viewCount > result.subscriberCount * HIGHLIGHT_CRITERIA.VIRAL_VIEW_RATE) {
+      highlights.push('viral');
+    }
+    
+    // 급성장 채널 체크
+    if (result.stats?.subscribers?.weekChange && result.subscriberCount) {
+      const weeklyGrowthRate = result.stats.subscribers.weekChange / result.subscriberCount;
+      if (weeklyGrowthRate > HIGHLIGHT_CRITERIA.WEEKLY_SUB_GROWTH_RATE) {
+        highlights.push('growing');
+      }
+    }
+    
+    // 트렌딩 콘텐츠 체크
+    if (result.stats?.views?.weekChange && result.viewCount) {
+      const weeklyViewGrowthRate = result.stats.views.weekChange / result.viewCount;
+      if (weeklyViewGrowthRate > HIGHLIGHT_CRITERIA.WEEKLY_VIEW_GROWTH_RATE) {
+        highlights.push('trending');
+      }
+    }
+    
+    return highlights;
+  };
+
+  // 하이라이트 정보를 가져오는 함수
+  const getHighlights = (result: YouTubeSearchResult): ContentHighlight[] => {
+    const highlightTypes = getHighlightTypes(result);
+    const highlights: ContentHighlight[] = [];
+    
+    if (highlightTypes.includes('viral')) {
+      const viewToSubRatio = result.viewCount && result.subscriberCount ? 
+        (result.viewCount / result.subscriberCount).toFixed(1) : '0';
+      highlights.push({
+        type: 'viral',
+        label: '바이럴',
+        color: 'from-yellow-400 to-orange-500',
+        description: `조회수가 구독자 수의 ${viewToSubRatio}배`
+      });
+    }
+    
+    if (highlightTypes.includes('growing')) {
+      const weeklySubGrowthRate = result.stats?.subscribers?.weekChange && result.subscriberCount ?
+        ((result.stats.subscribers.weekChange / result.subscriberCount) * 100).toFixed(1) : '0';
+      highlights.push({
+        type: 'growing',
+        label: '급성장',
+        color: 'from-green-400 to-emerald-500',
+        description: `주간 구독자 ${weeklySubGrowthRate}% 증가`
+      });
+    }
+    
+    if (highlightTypes.includes('trending')) {
+      const weeklyViewGrowthRate = result.stats?.views?.weekChange && result.viewCount ?
+        ((result.stats.views.weekChange / result.viewCount) * 100).toFixed(1) : '0';
+      highlights.push({
+        type: 'trending',
+        label: '트렌딩',
+        color: 'from-blue-400 to-indigo-500',
+        description: `주간 조회수 ${weeklyViewGrowthRate}% 증가`
+      });
+    }
+    
+    return highlights;
+  };
+
   // 필터링된 결과 계산 수정
   const filteredResults = results.filter(result => {
-    // 결과가 없거나 undefined인 경우 필터링
     if (!result) return false;
     
     const dateMatch = !filters.uploadDate || filterByDate(result.publishedAt, filters.uploadDate);
     const durationMatch = !filters.duration || filterByDuration(result.duration || '', filters.duration);
     const formatMatch = !filters.videoFormat || getVideoFormat(result).format === filters.videoFormat;
     
-    return dateMatch && durationMatch && formatMatch;
+    // 하이라이트 필터 적용
+    let highlightMatch = true;
+    if (filters.highlight) {
+      const highlightTypes = getHighlightTypes(result);
+      
+      switch (filters.highlight) {
+        case 'any':
+          highlightMatch = highlightTypes.length > 0;
+          break;
+        case 'viral':
+          highlightMatch = highlightTypes.includes('viral');
+          break;
+        case 'growing':
+          highlightMatch = highlightTypes.includes('growing');
+          break;
+        case 'trending':
+          highlightMatch = highlightTypes.includes('trending');
+          break;
+        case 'viral+growing':
+          highlightMatch = highlightTypes.includes('viral') && highlightTypes.includes('growing');
+          break;
+        case 'viral+trending':
+          highlightMatch = highlightTypes.includes('viral') && highlightTypes.includes('trending');
+          break;
+        case 'growing+trending':
+          highlightMatch = highlightTypes.includes('growing') && highlightTypes.includes('trending');
+          break;
+        case 'viral+growing+trending':
+          highlightMatch = highlightTypes.includes('viral') && highlightTypes.includes('growing') && highlightTypes.includes('trending');
+          break;
+        default:
+          highlightMatch = true;
+      }
+    }
+    
+    return dateMatch && durationMatch && formatMatch && highlightMatch;
   });
 
   // 페이지네이션 계산
@@ -189,52 +330,58 @@ export default function ResultsTable({ results }: ResultsTableProps) {
     setTotalPages(Math.ceil(filteredResults.length / itemsPerPage));
     // 필터나 아이템 개수가 변경되면 첫 페이지로 이동
     if (currentPage > Math.ceil(filteredResults.length / itemsPerPage)) {
-      setCurrentPage(1);
+    setCurrentPage(1);
     }
   }, [filteredResults.length, itemsPerPage]);
 
-  // 정렬 처리 함수
-  const handleSort = (field: keyof YouTubeSearchResult) => {
-    if (sortField === field) {
-      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortField(field);
-      setSortDirection('desc');
-    }
+  // 중첩된 객체에서 값을 가져오는 함수
+  const getNestedValue = (obj: any, path: string[]): any => {
+    return path.reduce((acc, curr) => (acc && acc[curr] !== undefined ? acc[curr] : undefined), obj);
+  };
+
+  // 정렬 처리 함수 수정
+  const handleSort = (field: string, path: string[]) => {
+    setSortConfig(prev => ({
+      field,
+      direction: prev.field === field && prev.direction === 'desc' ? 'asc' : 'desc'
+    }));
   };
 
   // 현재 페이지의 결과 계산
   useEffect(() => {
     // 정렬된 결과 계산
     const sortedResults = [...filteredResults].sort((a, b) => {
-      let valueA = a[sortField];
-      let valueB = b[sortField];
+      const fieldConfig = columns.find(col => col.id === sortConfig.field);
+      if (!fieldConfig?.path) return 0;
+
+      const valueA = getNestedValue(a, fieldConfig.path);
+      const valueB = getNestedValue(b, fieldConfig.path);
 
       // 숫자 필드 처리
       if (typeof valueA === 'number' && typeof valueB === 'number') {
-        return sortDirection === 'asc' ? valueA - valueB : valueB - valueA;
+        return sortConfig.direction === 'asc' ? valueA - valueB : valueB - valueA;
       }
 
       // 날짜 필드 처리
-      if (sortField === 'publishedAt') {
-        valueA = new Date(valueA as string).getTime();
-        valueB = new Date(valueB as string).getTime();
-        return sortDirection === 'asc' ? valueA - valueB : valueB - valueA;
+      if (fieldConfig.id === 'publishedAt') {
+        const dateA = new Date(valueA || 0).getTime();
+        const dateB = new Date(valueB || 0).getTime();
+        return sortConfig.direction === 'asc' ? dateA - dateB : dateB - dateA;
       }
 
       // 문자열 필드 처리
-      valueA = String(valueA || '');
-      valueB = String(valueB || '');
-      return sortDirection === 'asc' ? 
-        valueA.localeCompare(valueB) : 
-        valueB.localeCompare(valueA);
+      const strA = String(valueA || '');
+      const strB = String(valueB || '');
+      return sortConfig.direction === 'asc' ? 
+        strA.localeCompare(strB) : 
+        strB.localeCompare(strA);
     });
-    
+
     // 현재 페이지의 결과 계산
     const startIndex = (currentPage - 1) * itemsPerPage;
     const endIndex = Math.min(startIndex + itemsPerPage, sortedResults.length);
     setDisplayedResults(sortedResults.slice(startIndex, endIndex));
-  }, [filteredResults, sortField, sortDirection, currentPage, itemsPerPage]);
+  }, [filteredResults, sortConfig, currentPage, itemsPerPage]);
 
   // 페이지 변경 핸들러
   const handlePageChange = (page: number) => {
@@ -357,7 +504,7 @@ export default function ResultsTable({ results }: ResultsTableProps) {
         )}
         
         {/* 다음 페이지 버튼 */}
-        <button
+            <button
           onClick={() => handlePageChange(Math.min(totalPages, currentPage + 1))}
           disabled={currentPage === totalPages}
           className={`px-3 py-2 rounded-full transition-all duration-200 ${
@@ -370,7 +517,7 @@ export default function ResultsTable({ results }: ResultsTableProps) {
           <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
           </svg>
-        </button>
+            </button>
       </div>
     );
   };
@@ -378,12 +525,12 @@ export default function ResultsTable({ results }: ResultsTableProps) {
   // 아이템 개수 선택 UI 렌더링
   const renderItemsPerPageSelector = () => {
     const options = [10, 30, 50, 100];
-    
-    return (
+
+  return (
       <div className="flex items-center justify-between mb-4">
         <div className="flex space-x-2">
           {options.map(option => (
-            <button
+              <button
               key={option}
               onClick={() => handleItemsPerPageChange(option)}
               className={`px-4 py-2 text-sm rounded-full transition-all duration-200 ${
@@ -393,160 +540,126 @@ export default function ResultsTable({ results }: ResultsTableProps) {
               }`}
             >
               {option}개 표시
-            </button>
+              </button>
           ))}
         </div>
         
-        {/* 엑셀 다운로드 버튼 */}
-        <button
-          onClick={handleExcelDownload}
-          className="px-4 py-2 bg-gradient-to-r from-pink-300 to-purple-300 text-gray-800 font-bold rounded-full hover:from-pink-400 hover:to-purple-400 transition-all duration-200 flex items-center shadow-md transform hover:scale-105"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-          </svg>
-          엑셀 다운로드
-        </button>
+        <div className="ml-auto">
+          {/* 엑셀 다운로드 버튼 */}
+          <button
+            onClick={handleExcelDownload}
+            className="px-4 py-2 bg-gradient-to-r from-pink-300 to-purple-300 text-gray-800 font-bold rounded-full hover:from-pink-400 hover:to-purple-400 transition-all duration-200 flex items-center shadow-md transform hover:scale-105"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            엑셀 다운로드
+          </button>
+        </div>
       </div>
     );
   };
 
   // 필터 UI 렌더링 수정
-  const renderFilters = () => (
-    <div className="mb-6 bg-white rounded-lg shadow-md overflow-hidden">
-      {/* 필터 헤더 */}
-      <div 
-        className="p-4 cursor-pointer flex items-center justify-between hover:bg-pink-50/30 transition-colors duration-200"
-        onClick={() => setIsFilterExpanded(!isFilterExpanded)}
-      >
-        <div className="flex items-center">
-          <h2 className="text-lg font-bold text-gray-800">검색 필터</h2>
-          <span className="ml-2 text-sm text-pink-600">
-            ({filteredResults.length}개 결과)
-          </span>
-        </div>
-        <div className="flex items-center space-x-4">
-          {/* 필터 토글 버튼 */}
-          <button className="text-pink-400 hover:text-pink-600">
-            <span className={`transform transition-transform duration-200 ${isFilterExpanded ? 'rotate-180' : ''}`}>
-              ▼
-            </span>
-          </button>
-        </div>
-      </div>
-      
-      {/* 필터 내용 */}
-      {isFilterExpanded && (
-        <>
-          <div className="p-4 border-t border-pink-100">
-            <div className="space-y-4">
-              {/* 업로드 날짜 필터 */}
-              <div className="flex items-center">
-                <h3 className="text-sm font-semibold text-gray-700 min-w-[100px]">업로드 날짜</h3>
-                <div className="w-px h-5 bg-gray-300 mx-3"></div>
-                <div className="flex flex-wrap gap-2">
-                  {filterOptions.uploadDate.map(option => (
-                    <label
-                      key={option.value}
-                      className={`relative cursor-pointer px-4 py-2 rounded-full text-sm transition-all duration-200
-                        ${filters.uploadDate === option.value
-                          ? 'bg-gradient-to-r from-pink-200 to-purple-200 text-pink-800 shadow-sm'
-                          : 'bg-gray-50 text-gray-600 hover:bg-pink-50'
-                        }`}
-                    >
-                      <input
-                        type="radio"
-                        name="uploadDate"
-                        value={option.value}
-                        checked={filters.uploadDate === option.value}
-                        onChange={(e) => handleFilterChange('uploadDate', e.target.value)}
-                        className="sr-only"
-                      />
-                      {option.label}
-                    </label>
-                  ))}
-                </div>
+  const renderFilters = () => {
+    return (
+      <div className="filter-section py-4">
+        <div className="container mx-auto px-4">
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+            {/* 업로드 날짜 필터 */}
+            <div className="filter-group">
+              <h3 className="filter-group-title">업로드 날짜</h3>
+              <div className="filter-buttons">
+                {filterOptions.uploadDate.map(option => (
+                  <button
+                    key={option.value}
+                    onClick={() => handleFilterChange('uploadDate', option.value)}
+                    className={`filter-button ${
+                      filters.uploadDate === option.value ? 'filter-button-active' : 'filter-button-inactive'
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
               </div>
-              
-              {/* 길이 필터 */}
-              <div className="flex items-center">
-                <h3 className="text-sm font-semibold text-gray-700 min-w-[100px]">길이</h3>
-                <div className="w-px h-5 bg-gray-300 mx-3"></div>
-                <div className="flex flex-wrap gap-2">
-                  {filterOptions.duration.map(option => (
-                    <label
-                      key={option.value}
-                      className={`relative cursor-pointer px-4 py-2 rounded-full text-sm transition-all duration-200
-                        ${filters.duration === option.value
-                          ? 'bg-gradient-to-r from-pink-200 to-purple-200 text-pink-800 shadow-sm'
-                          : 'bg-gray-50 text-gray-600 hover:bg-pink-50'
-                        }`}
-                    >
-                      <input
-                        type="radio"
-                        name="duration"
-                        value={option.value}
-                        checked={filters.duration === option.value}
-                        onChange={(e) => handleFilterChange('duration', e.target.value)}
-                        className="sr-only"
-                      />
-                      {option.label}
-                    </label>
-                  ))}
-                </div>
+            </div>
+            
+            {/* 길이 필터 */}
+            <div className="filter-group">
+              <h3 className="filter-group-title">길이</h3>
+              <div className="filter-buttons">
+                {filterOptions.duration.map(option => (
+                  <button
+                    key={option.value}
+                    onClick={() => handleFilterChange('duration', option.value)}
+                    className={`filter-button ${
+                      filters.duration === option.value ? 'filter-button-active' : 'filter-button-inactive'
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
               </div>
-              
-              {/* 형식 필터 */}
-              <div className="flex items-center">
-                <h3 className="text-sm font-semibold text-gray-700 min-w-[100px]">형식</h3>
-                <div className="w-px h-5 bg-gray-300 mx-3"></div>
-                <div className="flex flex-wrap gap-2">
-                  {filterOptions.videoFormat.map(option => (
-                    <label
-                      key={option.value}
-                      className={`relative cursor-pointer px-4 py-2 rounded-full text-sm transition-all duration-200
-                        ${filters.videoFormat === option.value
-                          ? 'bg-gradient-to-r from-pink-200 to-purple-200 text-pink-800 shadow-sm'
-                          : 'bg-gray-50 text-gray-600 hover:bg-pink-50'
-                        }`}
-                    >
-                      <input
-                        type="radio"
-                        name="videoFormat"
-                        value={option.value}
-                        checked={filters.videoFormat === option.value}
-                        onChange={(e) => handleFilterChange('videoFormat', e.target.value)}
-                        className="sr-only"
-                      />
-                      {option.label}
-                    </label>
-                  ))}
-                </div>
+            </div>
+            
+            {/* 형식 필터 */}
+            <div className="filter-group">
+              <h3 className="filter-group-title">형식</h3>
+              <div className="filter-buttons">
+                {filterOptions.videoFormat.map(option => (
+                  <button
+                    key={option.value}
+                    onClick={() => handleFilterChange('videoFormat', option.value)}
+                    className={`filter-button ${
+                      filters.videoFormat === option.value ? 'filter-button-active' : 'filter-button-inactive'
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            
+            {/* 하이라이트 필터 */}
+            <div className="filter-group">
+              <h3 className="filter-group-title">하이라이트</h3>
+              <div className="filter-buttons">
+                {filterOptions.highlight.map(option => (
+                  <button
+                    key={option.value}
+                    onClick={() => handleFilterChange('highlight', option.value)}
+                    className={`filter-button ${
+                      filters.highlight === option.value ? 'filter-button-active' : 'filter-button-inactive'
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
               </div>
             </div>
           </div>
+          
+          {/* 선택된 필터 표시 */}
           {renderSelectedFilters()}
-        </>
-      )}
-    </div>
-  );
+        </div>
+      </div>
+    );
+  };
 
   // 정렬 아이콘 렌더링
-  const renderSortIcon = (field: keyof YouTubeSearchResult) => {
-    if (sortField !== field) {
-      return (
-        <span className="ml-1 text-gray-400">
-          <span className="block text-[0.6rem]">▲</span>
-          <span className="block text-[0.6rem] -mt-1">▼</span>
-        </span>
-      );
-    }
+  const renderSortIcon = (field: string) => {
+    if (!field) return null;
+    
     return (
-      <span className="ml-1 text-pink-500">
-        {sortDirection === 'asc' ? (
-          <span className="block text-[0.6rem]">▲</span>
+      <span className="ml-1 inline-block">
+        {sortConfig.field === field ? (
+          sortConfig.direction === 'asc' ? (
+            <span className="icon icon-arrow-up text-pink-500" />
+          ) : (
+            <span className="icon icon-arrow-down text-pink-500" />
+          )
         ) : (
-          <span className="block text-[0.6rem]">▼</span>
+          <span className="icon icon-arrow-down text-gray-300" />
         )}
       </span>
     );
@@ -700,7 +813,8 @@ export default function ResultsTable({ results }: ResultsTableProps) {
                 setFilters({
                   uploadDate: '',
                   duration: '',
-                  videoFormat: ''
+                  videoFormat: '',
+                  highlight: ''
                 });
               }}
             >
@@ -712,8 +826,45 @@ export default function ResultsTable({ results }: ResultsTableProps) {
     );
   };
 
+  // 하이라이트 뱃지 렌더링 수정
+  const renderHighlightBadges = (highlights: ContentHighlight[]) => {
+    return (
+      <div className="flex flex-wrap gap-2 mt-2">
+        {highlights.map((highlight, index) => (
+          <span
+            key={index}
+            className={`highlight-badge badge-${highlight.type} group relative cursor-help`}
+            title={highlight.description}
+          >
+            {highlight.type === 'viral' && (
+              <svg className="highlight-icon viral-icon" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M12.395 2.553a1 1 0 00-1.45-.385c-.345.23-.614.558-.822.88-.214.33-.403.713-.57 1.116-.334.804-.614 1.768-.84 2.734a31.365 31.365 0 00-.613 3.58 2.64 2.64 0 01-.945-1.067c-.328-.68-.398-1.534-.398-2.654A1 1 0 005.05 6.05 6.981 6.981 0 003 11a7 7 0 1011.95-4.95c-.592-.591-.98-.985-1.348-1.467-.363-.476-.724-1.063-1.207-2.03zM12.12 15.12A3 3 0 017 13s.879.5 2.5.5c0-1 .5-4 1.25-4.5.5 1 .786 1.293 1.371 1.879A2.99 2.99 0 0113 13a2.99 2.99 0 01-.879 2.121z" clipRule="evenodd" />
+              </svg>
+            )}
+            {highlight.type === 'growing' && (
+              <svg className="highlight-icon growing-icon" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M12 7a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0V8.414l-4.293 4.293a1 1 0 01-1.414 0L8 10.414l-4.293 4.293a1 1 0 01-1.414-1.414l5-5a1 1 0 011.414 0L11 10.586 14.586 7H12z" clipRule="evenodd" />
+              </svg>
+            )}
+            {highlight.type === 'trending' && (
+              <svg className="highlight-icon trending-icon" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M5.293 7.707a1 1 0 010-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 01-1.414 1.414L11 5.414V17a1 1 0 11-2 0V5.414L6.707 7.707a1 1 0 01-1.414 0z" clipRule="evenodd" />
+              </svg>
+            )}
+            {highlight.label}
+            <span className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 text-xs bg-gray-900 text-white rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+              {highlight.description}
+            </span>
+          </span>
+        ))}
+      </div>
+    );
+  };
+
   // 테이블 셀 렌더링 함수
   const renderCell = (col: ColumnDefinition, result: YouTubeSearchResult): React.ReactElement => {
+    const highlights = getHighlights(result);
+    
     switch (col.id) {
       case 'thumbnail':
         return (
@@ -730,10 +881,11 @@ export default function ResultsTable({ results }: ResultsTableProps) {
       case 'title':
         return (
           <td key={col.id} className="px-4 py-4">
-            <div className="line-clamp-2">
+            <div className="flex flex-col">
               <Link href={`https://www.youtube.com/watch?v=${result.id}`} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
                 {result.title}
               </Link>
+              {highlights.length > 0 && renderHighlightBadges(highlights)}
             </div>
           </td>
         );
@@ -760,51 +912,46 @@ export default function ResultsTable({ results }: ResultsTableProps) {
             {formatDuration(result.duration || '')}
           </td>
         );
-      case 'definition':
-        return (
-          <td key={col.id} className="px-4 py-4">
-            {result.definition?.toUpperCase() || '-'}
-          </td>
-        );
-      case 'caption':
-        return (
-          <td key={col.id} className="px-4 py-4">
-            {result.caption ? '있음' : '없음'}
-          </td>
-        );
-      case 'topicDetails':
-        return (
-          <td key={col.id} className="px-4 py-4">
-            {renderTopics(result.topicDetails, result.id)}
-          </td>
-        );
-      case 'tags':
-        return (
-          <td key={col.id} className="px-4 py-4">
-            {renderTags(result.tags, result.id)}
-          </td>
-        );
       case 'viewCount':
+        const isViral = result.viewCount && result.subscriberCount && 
+          result.viewCount > result.subscriberCount * HIGHLIGHT_CRITERIA.VIRAL_VIEW_RATE;
         return (
-          <td key={col.id} className="px-4 py-4">
+          <td key={col.id} className={`px-4 py-4 ${isViral ? 'highlight-viral highlight-cell' : ''}`}>
             {formatNumber(result.viewCount as number || 0)}
           </td>
         );
-      case 'viewChange':
+      case 'weekViewChange':
+        const weeklyViewGrowthRate = result.stats?.views?.weekChange 
+          ? result.stats.views.weekChange / result.viewCount 
+          : 0;
         return (
-          <td key={col.id} className="px-4 py-4">
-            {result.stats ? (
-              <div className="space-y-1">
-                <div className={`text-sm ${result.stats.views.weekChange >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                  1주일: {formatNumber(Math.abs(result.stats.views.weekChange))}
-                  {result.stats.views.weekChange >= 0 ? '↑' : '↓'}
-                </div>
-                <div className={`text-sm ${result.stats.views.monthChange >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                  1달: {formatNumber(Math.abs(result.stats.views.monthChange))}
-                  {result.stats.views.monthChange >= 0 ? '↑' : '↓'}
-                </div>
-              </div>
-            ) : '-'}
+          <td className={`${col.width} px-4 py-2 text-right ${
+            weeklyViewGrowthRate > HIGHLIGHT_CRITERIA.WEEKLY_VIEW_GROWTH_RATE
+              ? 'highlight-trending highlight-cell'
+              : ''
+          }`}>
+            {result.stats?.views?.weekChange !== undefined && (
+              <>
+                {result.stats.views.weekChange > 0 ? '+' : ''}
+                {formatNumber(result.stats.views.weekChange)}
+                {weeklyViewGrowthRate > HIGHLIGHT_CRITERIA.WEEKLY_VIEW_GROWTH_RATE && (
+                  <span className="ml-1 text-xs text-blue-600">
+                    ({(weeklyViewGrowthRate * 100).toFixed(0)}%↑)
+                  </span>
+                )}
+              </>
+            )}
+          </td>
+        );
+      case 'monthViewChange':
+        return (
+          <td className={`${col.width} px-4 py-2 text-right`}>
+            {result.stats?.views?.monthChange !== undefined && (
+              <>
+                {result.stats.views.monthChange > 0 ? '+' : ''}
+                {formatNumber(result.stats.views.monthChange)}
+              </>
+            )}
           </td>
         );
       case 'likeCount':
@@ -833,209 +980,62 @@ export default function ResultsTable({ results }: ResultsTableProps) {
             {formatNumber(result.subscriberCount as number || 0)}
           </td>
         );
-      case 'subscriberChange':
+      case 'weekSubChange':
+        const weeklySubGrowthRate = result.stats?.subscribers?.weekChange 
+          ? result.stats.subscribers.weekChange / result.subscriberCount 
+          : 0;
         return (
-          <td key={col.id} className="px-4 py-4">
-            {result.stats ? (
-              <div className="space-y-1">
-                <div className={`text-sm ${result.stats.subscribers.weekChange >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                  1주일: {formatNumber(Math.abs(result.stats.subscribers.weekChange))}
-                  {result.stats.subscribers.weekChange >= 0 ? '↑' : '↓'}
-                </div>
-                <div className={`text-sm ${result.stats.subscribers.monthChange >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                  1달: {formatNumber(Math.abs(result.stats.subscribers.monthChange))}
-                  {result.stats.subscribers.monthChange >= 0 ? '↑' : '↓'}
-                </div>
-              </div>
-            ) : '-'}
-          </td>
-        );
-      case 'trafficSources':
-        return (
-          <td key={col.id} className="px-4 py-4">
-            {result.trafficSources && (
-              <div className="space-y-1">
-                {Object.entries(result.trafficSources).map(([source, percentage]) => (
-                  <div key={source} className="flex items-center justify-between">
-                    <span className="text-xs">{source}: {percentage}%</span>
-                  </div>
-                ))}
-              </div>
+          <td className={`${col.width} px-4 py-2 text-right ${
+            weeklySubGrowthRate > HIGHLIGHT_CRITERIA.WEEKLY_SUB_GROWTH_RATE
+              ? 'highlight-growing highlight-cell'
+              : ''
+          }`}>
+            {result.stats?.subscribers?.weekChange !== undefined && (
+              <>
+                {result.stats.subscribers.weekChange > 0 ? '+' : ''}
+                {formatNumber(result.stats.subscribers.weekChange)}
+                {weeklySubGrowthRate > HIGHLIGHT_CRITERIA.WEEKLY_SUB_GROWTH_RATE && (
+                  <span className="ml-1 text-xs text-green-600">
+                    ({(weeklySubGrowthRate * 100).toFixed(0)}%↑)
+                  </span>
+                )}
+              </>
             )}
           </td>
         );
-      case 'deviceStats':
+      case 'monthSubChange':
         return (
-          <td key={col.id} className="px-4 py-4">
-            {result.deviceStats && (
-              <div className="space-y-1">
-                {Object.entries(result.deviceStats).map(([device, percentage]) => (
-                  <div key={device} className="flex items-center justify-between">
-                    <span className="text-xs">{device}: {percentage}%</span>
-                  </div>
-                ))}
-              </div>
+          <td className={`${col.width} px-4 py-2 text-right`}>
+            {result.stats?.subscribers?.monthChange !== undefined && (
+              <>
+                {result.stats.subscribers.monthChange > 0 ? '+' : ''}
+                {formatNumber(result.stats.subscribers.monthChange)}
+              </>
             )}
           </td>
         );
-      case 'growthStats':
+      case 'topicDetails':
         return (
           <td key={col.id} className="px-4 py-4">
-            {result.growthStats && (
-              <div className="space-y-1">
-                <div>성장률: {result.growthStats.viewsGrowth?.toFixed(1)}%</div>
-                <div>참여율: {result.growthStats.engagementRate?.toFixed(1)}%</div>
-              </div>
-            )}
+            {renderTopics(result.topicDetails, result.id)}
           </td>
         );
-      case 'retentionStats':
+      case 'tags':
         return (
           <td key={col.id} className="px-4 py-4">
-            {result.retentionStats && (
-              <div className="space-y-1">
-                <div>시청 지속률: {result.retentionStats.viewerDropoffRate}%</div>
-                <div>클릭률(CTR): {result.retentionStats.ctr}%</div>
-              </div>
-            )}
-          </td>
-        );
-      case 'geographicStats':
-        return (
-          <td key={col.id} className="px-4 py-4">
-            {result.geographicStats?.countries && (
-              <div className="space-y-1">
-                {Object.entries(result.geographicStats.countries)
-                  .sort(([, a], [, b]) => b - a)
-                  .slice(0, 5)
-                  .map(([country, percentage]) => (
-                    <div key={country} className="flex items-center justify-between">
-                      <span className="text-xs">{country}: {percentage.toFixed(1)}%</span>
-                    </div>
-                  ))}
-              </div>
-            )}
-          </td>
-        );
-      case 'viewingStats':
-        return (
-          <td key={col.id} className="px-4 py-4">
-            {result.viewingStats && (
-              <div className="space-y-1">
-                <div>주요 시청 시간: {result.viewingStats.peakViewingTime}</div>
-                <div>실시간 시청: {result.viewingStats.livePercentage.toFixed(1)}%</div>
-              </div>
-            )}
+            {renderTags(result.tags, result.id)}
           </td>
         );
       case 'videoFormat':
-        const format = getVideoFormat(result);
         return (
-          <td key={col.id} className="px-4 py-4">
-            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-              format.format === 'shorts' 
-                ? 'bg-red-100 text-red-800' 
-                : 'bg-blue-100 text-blue-800'
-            }`}>
-              {format.label}
-            </span>
-          </td>
-        );
-      case 'engagementRate':
-        return (
-          <td key={col.id} className="px-4 py-4">
-            {result.engagementRate?.toFixed(1)}%
-          </td>
-        );
-      case 'averageViewDuration':
-        return (
-          <td key={col.id} className="px-4 py-4">
-            {result.averageViewDuration?.toFixed(1)} minutes
-          </td>
-        );
-      case 'viewerDropoffRate':
-        return (
-          <td key={col.id} className="px-4 py-4">
-            {result.viewerDropoffRate?.toFixed(1)}%
-          </td>
-        );
-      case 'ctr':
-        return (
-          <td key={col.id} className="px-4 py-4">
-            {result.ctr?.toFixed(1)}%
-          </td>
-        );
-      case 'geographicStats':
-        return (
-          <td key={col.id} className="px-4 py-4">
-            {result.geographicStats?.countries && (
-              <div className="space-y-1">
-                {Object.entries(result.geographicStats.countries)
-                  .sort(([, a], [, b]) => b - a)
-                  .slice(0, 5)
-                  .map(([country, percentage]) => (
-                    <div key={country} className="flex items-center justify-between">
-                      <span className="text-xs">{country}: {percentage.toFixed(1)}%</span>
-                    </div>
-                  ))}
-              </div>
-            )}
-          </td>
-        );
-      case 'demographics':
-        return (
-          <td key={col.id} className="px-4 py-4">
-            {result.demographics && (
-              <div className="space-y-1">
-                <div>인구통계: {result.demographics.population.toLocaleString()}</div>
-                <div>인구밀도: {result.demographics.populationDensity.toLocaleString()} people/km²</div>
-              </div>
-            )}
-          </td>
-        );
-      case 'viewingPatterns':
-        return (
-          <td key={col.id} className="px-4 py-4">
-            {result.viewingPatterns && (
-              <div className="space-y-1">
-                <div>주요 시청 시간: {result.viewingPatterns.peakViewingTime}</div>
-                <div>실시간 시청: {result.viewingPatterns.livePercentage.toFixed(1)}%</div>
-              </div>
-            )}
-          </td>
-        );
-      case 'contentReach':
-        return (
-          <td key={col.id} className="px-4 py-4">
-            {result.contentReach?.toFixed(1)}%
-          </td>
-        );
-      case 'trafficSources':
-        return (
-          <td key={col.id} className="px-4 py-4">
-            {result.trafficSources && (
-              <div className="space-y-1">
-                {Object.entries(result.trafficSources).map(([source, percentage]) => (
-                  <div key={source} className="flex items-center justify-between">
-                    <span className="text-xs">{source}: {percentage}%</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </td>
-        );
-      case 'deviceStats':
-        return (
-          <td key={col.id} className="px-4 py-4">
-            {result.deviceStats && (
-              <div className="space-y-1">
-                {Object.entries(result.deviceStats).map(([device, percentage]) => (
-                  <div key={device} className="flex items-center justify-between">
-                    <span className="text-xs">{device}: {percentage}%</span>
-                  </div>
-                ))}
-              </div>
-            )}
+          <td className={`${col.width} px-4 py-2 text-center`}>
+            {result.duration ? (
+              parseDurationToSeconds(result.duration) <= 60 ? (
+                <span className="px-2 py-1 bg-pink-100 text-pink-700 rounded-full text-xs">Shorts</span>
+              ) : (
+                <span className="px-2 py-1 bg-purple-100 text-purple-700 rounded-full text-xs">Long</span>
+              )
+            ) : '-'}
           </td>
         );
       default:
@@ -1066,7 +1066,7 @@ export default function ResultsTable({ results }: ResultsTableProps) {
       label: '제목',
       width: '300px',
       sortable: true,
-      field: 'title'
+      path: ['title']
     },
     {
       id: 'description',
@@ -1079,73 +1079,77 @@ export default function ResultsTable({ results }: ResultsTableProps) {
       label: '게시일',
       width: '150px',
       sortable: true,
-      field: 'publishedAt'
+      path: ['publishedAt']
     },
     {
       id: 'duration',
       label: '길이',
       width: '80px',
       sortable: true,
-      field: 'duration'
-    },
-    {
-      id: 'definition',
-      label: '화질',
-      width: '80px',
-      sortable: false
-    },
-    {
-      id: 'caption',
-      label: '자막',
-      width: '80px',
-      sortable: false
+      path: ['duration']
     },
     {
       id: 'viewCount',
       label: '조회수',
       width: '100px',
       sortable: true,
-      field: 'viewCount'
+      path: ['viewCount']
     },
     {
-      id: 'viewChange',
-      label: '조회수 변화',
+      id: 'weekViewChange',
+      label: '1주일 조회수 변화',
       width: '150px',
-      sortable: false
+      sortable: true,
+      path: ['stats', 'views', 'weekChange']
+    },
+    {
+      id: 'monthViewChange',
+      label: '1달 조회수 변화',
+      width: '150px',
+      sortable: true,
+      path: ['stats', 'views', 'monthChange']
     },
     {
       id: 'likeCount',
       label: '좋아요',
       width: '100px',
       sortable: true,
-      field: 'likeCount'
+      path: ['likeCount']
     },
     {
       id: 'commentCount',
       label: '댓글',
       width: '100px',
       sortable: true,
-      field: 'commentCount'
+      path: ['commentCount']
     },
     {
       id: 'channelTitle',
       label: '채널명',
       width: '200px',
       sortable: true,
-      field: 'channelTitle'
+      path: ['channelTitle']
     },
     {
       id: 'subscriberCount',
       label: '구독자수',
       width: '120px',
       sortable: true,
-      field: 'subscriberCount'
+      path: ['subscriberCount']
     },
     {
-      id: 'subscriberChange',
-      label: '구독자 변화',
+      id: 'weekSubChange',
+      label: '1주일 구독자 변화',
       width: '150px',
-      sortable: false
+      sortable: true,
+      path: ['stats', 'subscribers', 'weekChange']
+    },
+    {
+      id: 'monthSubChange',
+      label: '1달 구독자 변화',
+      width: '150px',
+      sortable: true,
+      path: ['stats', 'subscribers', 'monthChange']
     }
   ];
 
@@ -1209,11 +1213,11 @@ export default function ResultsTable({ results }: ResultsTableProps) {
                       className={`px-6 py-5 text-left text-sm font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap ${
                         col.sortable ? 'cursor-pointer hover:bg-pink-50/50' : ''
                       }`}
-                      onClick={() => col.sortable && col.field && handleSort(col.field)}
+                      onClick={() => col.sortable && col.path && handleSort(col.id, col.path)}
                     >
                       <div className="flex items-center">
                         {col.label}
-                        {col.sortable && col.field && renderSortIcon(col.field)}
+                        {col.sortable && col.path && renderSortIcon(col.id)}
                       </div>
                     </th>
                   ))}
@@ -1239,12 +1243,12 @@ export default function ResultsTable({ results }: ResultsTableProps) {
               <tbody>
                 {displayedResults.length > 0 ? (
                   displayedResults.map((result, index) => (
-                    <tr 
+                  <tr 
                       key={`${result.id}-${index}`}
-                      className={`hover:bg-pink-50 transition-colors duration-200 ${index % 2 === 0 ? 'bg-white' : 'bg-pink-50/30'}`}
-                    >
+                    className={`hover:bg-pink-50 transition-colors duration-200 ${index % 2 === 0 ? 'bg-white' : 'bg-pink-50/30'}`}
+                  >
                       {columns.map(col => renderCell(col, result))}
-                    </tr>
+            </tr>
                   ))
                 ) : (
                   <tr>
@@ -1256,14 +1260,14 @@ export default function ResultsTable({ results }: ResultsTableProps) {
               </tbody>
             </table>
           </div>
+          </div>
         </div>
-      </div>
-      
+        
       {/* 페이지네이션 */}
       {renderPagination()}
       
       {/* 로딩 인디케이터 */}
-      {isLoading && (
+          {isLoading && (
         <div className="py-4 text-center">
           <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-pink-400 border-r-transparent"></div>
         </div>

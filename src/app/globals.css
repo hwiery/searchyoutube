@@ -64,25 +64,40 @@ main {
 
   @media (min-width: 640px) {
     .container {
-      max-width: 640px;
+      width: 100%;
+      max-width: none;
     }
   }
 
   @media (min-width: 768px) {
     .container {
-      max-width: 768px;
+      width: 100%;
+      max-width: none;
     }
   }
 
   @media (min-width: 1024px) {
     .container {
-      max-width: 1024px;
+      width: 100%;
+      max-width: none;
     }
   }
 
   @media (min-width: 1280px) {
     .container {
-      max-width: 1280px;
+      width: 100%;
+      max-width: none;
+      padding-right: 2rem;
+      padding-left: 2rem;
+    }
+  }
+
+  @media (min-width: 1536px) {
+    .container {
+      width: 100%;
+      max-width: none;
+      padding-right: 3rem;
+      padding-left: 3rem;
     }
   }
 
@@ -278,39 +293,69 @@ main {
 
   /* 테이블 관련 스타일 */
   .results-table {
-    min-width: 100%;
+    width: 100%;
+    min-width: max-content;
     background-color: white;
     border-collapse: collapse;
     border-radius: 1rem;
-    overflow: hidden;
     box-shadow: 0 4px 6px -1px rgba(249, 168, 212, 0.1), 0 2px 4px -1px rgba(196, 181, 253, 0.06);
+    table-layout: fixed;
   }
 
   .results-table th {
-    padding: 0.75rem 1rem;
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: #4b5563;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    background-image: linear-gradient(to right, #fce7f3, #ede9fe);
-    border-bottom: 1px solid #fbcfe8;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background-color: white;
   }
 
   .results-table td {
-    padding: 0.75rem 1rem;
-    font-size: 0.875rem;
-    border-bottom: 1px solid #fce7f3;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
-  .results-table tr:nth-child(even) {
-    background-color: rgba(252, 231, 243, 0.2);
+  /* 첫 번째 열 고정 */
+  .results-table th:first-child,
+  .results-table td:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    background-color: white;
   }
 
-  .results-table tr:hover {
-    background-color: rgba(252, 231, 243, 0.4);
-    transition-property: background-color;
-    transition-duration: 150ms;
+  /* 두 번째 열(제목) 고정 */
+  .results-table th:nth-child(2),
+  .results-table td:nth-child(2) {
+    position: sticky;
+    left: 100px;
+    z-index: 2;
+    background-color: white;
+  }
+
+  /* 고정된 열에 그림자 효과 */
+  .results-table td:nth-child(2)::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: -5px;
+    height: 100%;
+    width: 5px;
+    background: linear-gradient(to right, rgba(0,0,0,0.1), transparent);
+  }
+
+  .results-table-container {
+    width: 100%;
+    overflow-x: visible;
+    position: relative;
+  }
+
+  /* 테이블 반응형 스타일 */
+  @media (max-width: 1920px) {
+    .results-table {
+      display: table;
+      overflow-x: visible;
+    }
   }
 
   /* 버튼 스타일 */
@@ -397,5 +442,122 @@ main {
     height: 3rem;
     border-radius: 0.75rem;
     object-fit: cover;
+  }
+
+  /* 하이라이트 관련 스타일 */
+  .highlight-cell {
+    position: relative;
+    overflow: hidden;
+    border: 2px solid transparent;
+    transition: all 0.3s ease;
+  }
+
+  .highlight-cell::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    opacity: 0.15;
+    z-index: 1;
+  }
+
+  .highlight-viral {
+    border-color: #F59E0B;
+  }
+
+  .highlight-viral::before {
+    background: linear-gradient(45deg, #FEF3C7, #FFEDD5);
+    box-shadow: 0 0 15px rgba(245, 158, 11, 0.3);
+  }
+
+  .highlight-growing {
+    border-color: #10B981;
+  }
+
+  .highlight-growing::before {
+    background: linear-gradient(45deg, #DCFCE7, #D1FAE5);
+    box-shadow: 0 0 15px rgba(16, 185, 129, 0.3);
+  }
+
+  .highlight-trending {
+    border-color: #3B82F6;
+  }
+
+  .highlight-trending::before {
+    background: linear-gradient(45deg, #DBEAFE, #E0E7FF);
+    box-shadow: 0 0 15px rgba(59, 130, 246, 0.3);
+  }
+
+  /* 하이라이트 뱃지 그라데이션 */
+  .badge-viral {
+    @apply bg-gradient-to-r from-yellow-500 to-orange-500 text-white ring-2 ring-yellow-200;
+  }
+
+  .badge-growing {
+    @apply bg-gradient-to-r from-green-500 to-emerald-500 text-white ring-2 ring-green-200;
+  }
+
+  .badge-trending {
+    @apply bg-gradient-to-r from-blue-500 to-indigo-500 text-white ring-2 ring-blue-200;
+  }
+
+  /* 하이라이트 아이콘 */
+  .highlight-icon {
+    @apply inline-block w-4 h-4 mr-1;
+  }
+
+  .viral-icon {
+    @apply text-yellow-500;
+  }
+
+  .growing-icon {
+    @apply text-green-500;
+  }
+
+  .trending-icon {
+    @apply text-blue-500;
+  }
+
+  /* 필터 섹션 스타일 */
+  .filter-section {
+    @apply bg-white border-b border-pink-100;
+  }
+
+  .filter-group {
+    @apply mb-6;
+  }
+
+  .filter-group-title {
+    @apply text-sm font-medium text-gray-700 mb-3;
+  }
+
+  .filter-buttons {
+    @apply flex flex-wrap gap-2;
+  }
+
+  .filter-button {
+    @apply px-4 py-2 rounded-full text-sm font-medium transition-all duration-200;
+  }
+
+  .filter-button-active {
+    @apply bg-gradient-to-r from-pink-500 to-purple-500 text-white shadow-md;
+  }
+
+  .filter-button-inactive {
+    @apply bg-white text-gray-600 border border-gray-200 hover:bg-pink-50;
+  }
+
+  .selected-filters {
+    @apply flex flex-wrap gap-2 mt-4 px-4 py-3 bg-pink-50/50 border-t border-pink-100;
+  }
+
+  .selected-filter-tag {
+    @apply flex items-center bg-white text-pink-700 px-3 py-1 rounded-full text-sm border border-pink-200 shadow-sm;
+  }
+
+  .selected-filter-remove {
+    @apply ml-2 text-pink-500 hover:text-pink-700 cursor-pointer;
   }
 }

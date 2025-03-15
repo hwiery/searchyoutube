@@ -1,2 +1,3 @@
 # 넥스트 지우는 용도
 Remove-Item -Path .next -Recurse -Force
+XX

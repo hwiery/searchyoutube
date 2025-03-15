@@ -71,6 +71,9 @@ export default function Navbar() {
           {/* 로고 및 브랜드 */}
           <div className="flex-shrink-0 flex items-center">
             <Link href="/" className="flex items-center">
+              {/* 로고 이미지 (현재는 텍스트로 대체) */}
+              {/* 나중에 로고 이미지가 준비되면 아래 주석을 해제하고 텍스트 부분을 주석 처리하세요 */}
+              {/* <img src="/assets/logo.png" alt="SearchYoutube" className="h-8 w-auto mr-2" /> */}
               <span className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-red-500 to-purple-600 mr-2">
                 SearchYoutube
               </span>
@@ -151,7 +154,11 @@ export default function Navbar() {
                     <Link 
                       href="/profile" 
                       className="block px-4 py-2 text-sm text-gray-700 hover:bg-pink-50 hover:text-pink-600 transition-colors duration-200"
-                      onClick={() => setIsProfileMenuOpen(false)}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        setIsProfileMenuOpen(false);
+                        router.push('/profile');
+                      }}
                     >
                       <div className="flex items-center">
                         <span className="icon icon-user mr-2 text-pink-400"></span>
@@ -239,7 +246,11 @@ export default function Navbar() {
                         ? 'text-pink-600 font-semibold' 
                         : 'text-gray-700 hover:text-pink-500'
                     }`}
-                    onClick={() => setIsMenuOpen(false)}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setIsMenuOpen(false);
+                      router.push('/profile');
+                    }}
                   >
                     <div className="flex items-center">
                       <span className="icon icon-user mr-2 text-pink-400"></span>

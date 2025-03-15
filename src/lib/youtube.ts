@@ -242,7 +242,7 @@ function generateRetentionStats() {
 
 export async function searchYouTube(
   query: string,
-  limit: number = 100,
+  limit: number = 1000,
   offset: number = 0
 ): Promise<YouTubeSearchResponse> {
   try {

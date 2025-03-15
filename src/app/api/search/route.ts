@@ -86,7 +86,7 @@ export async function GET(req: NextRequest) {
     // 검색어 확인
     const url = new URL(req.url);
     const query = url.searchParams.get('q');
-    const limit = parseInt(url.searchParams.get('limit') || '10');
+    const limit = parseInt(url.searchParams.get('limit') || '1000');
     const offset = parseInt(url.searchParams.get('offset') || '0');
     
     if (!query) {
