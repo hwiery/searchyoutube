@@ -563,19 +563,22 @@ export default function ResultsTable({ results }: ResultsTableProps) {
   // 필터 UI 렌더링 수정
   const renderFilters = () => {
     return (
-      <div className="filter-section py-4">
-        <div className="container mx-auto px-4">
-          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+      <div className="w-full">
+        {/* 필터 섹션 */}
+        <div className="bg-white p-4 border-b border-gray-200">
+          <div className="flex flex-col space-y-4">
             {/* 업로드 날짜 필터 */}
-            <div className="filter-group">
-              <h3 className="filter-group-title">업로드 날짜</h3>
-              <div className="filter-buttons">
-                {filterOptions.uploadDate.map(option => (
+            <div className="flex items-start">
+              <div className="w-32 flex-shrink-0 pt-2 text-sm font-medium text-gray-700">업로드 날짜</div>
+              <div className="flex-1 flex flex-wrap gap-2">
+                {filterOptions.uploadDate.map((option) => (
                   <button
                     key={option.value}
                     onClick={() => handleFilterChange('uploadDate', option.value)}
-                    className={`filter-button ${
-                      filters.uploadDate === option.value ? 'filter-button-active' : 'filter-button-inactive'
+                    className={`px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 ${
+                      filters.uploadDate === option.value
+                        ? 'bg-gradient-to-r from-red-400 to-pink-500 text-white shadow-md'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                     }`}
                   >
                     {option.label}
@@ -583,17 +586,19 @@ export default function ResultsTable({ results }: ResultsTableProps) {
                 ))}
               </div>
             </div>
-            
+
             {/* 길이 필터 */}
-            <div className="filter-group">
-              <h3 className="filter-group-title">길이</h3>
-              <div className="filter-buttons">
-                {filterOptions.duration.map(option => (
+            <div className="flex items-start">
+              <div className="w-32 flex-shrink-0 pt-2 text-sm font-medium text-gray-700">길이</div>
+              <div className="flex-1 flex flex-wrap gap-2">
+                {filterOptions.duration.map((option) => (
                   <button
                     key={option.value}
                     onClick={() => handleFilterChange('duration', option.value)}
-                    className={`filter-button ${
-                      filters.duration === option.value ? 'filter-button-active' : 'filter-button-inactive'
+                    className={`px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 ${
+                      filters.duration === option.value
+                        ? 'bg-gradient-to-r from-red-400 to-pink-500 text-white shadow-md'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                     }`}
                   >
                     {option.label}
@@ -601,17 +606,19 @@ export default function ResultsTable({ results }: ResultsTableProps) {
                 ))}
               </div>
             </div>
-            
+
             {/* 형식 필터 */}
-            <div className="filter-group">
-              <h3 className="filter-group-title">형식</h3>
-              <div className="filter-buttons">
-                {filterOptions.videoFormat.map(option => (
+            <div className="flex items-start">
+              <div className="w-32 flex-shrink-0 pt-2 text-sm font-medium text-gray-700">형식</div>
+              <div className="flex-1 flex flex-wrap gap-2">
+                {filterOptions.videoFormat.map((option) => (
                   <button
                     key={option.value}
                     onClick={() => handleFilterChange('videoFormat', option.value)}
-                    className={`filter-button ${
-                      filters.videoFormat === option.value ? 'filter-button-active' : 'filter-button-inactive'
+                    className={`px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 ${
+                      filters.videoFormat === option.value
+                        ? 'bg-gradient-to-r from-red-400 to-pink-500 text-white shadow-md'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                     }`}
                   >
                     {option.label}
@@ -619,17 +626,19 @@ export default function ResultsTable({ results }: ResultsTableProps) {
                 ))}
               </div>
             </div>
-            
+
             {/* 하이라이트 필터 */}
-            <div className="filter-group">
-              <h3 className="filter-group-title">하이라이트</h3>
-              <div className="filter-buttons">
-                {filterOptions.highlight.map(option => (
+            <div className="flex items-start">
+              <div className="w-32 flex-shrink-0 pt-2 text-sm font-medium text-gray-700">하이라이트</div>
+              <div className="flex-1 flex flex-wrap gap-2">
+                {filterOptions.highlight.map((option) => (
                   <button
                     key={option.value}
                     onClick={() => handleFilterChange('highlight', option.value)}
-                    className={`filter-button ${
-                      filters.highlight === option.value ? 'filter-button-active' : 'filter-button-inactive'
+                    className={`px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 ${
+                      filters.highlight === option.value
+                        ? 'bg-gradient-to-r from-red-400 to-pink-500 text-white shadow-md'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                     }`}
                   >
                     {option.label}
@@ -638,9 +647,30 @@ export default function ResultsTable({ results }: ResultsTableProps) {
               </div>
             </div>
           </div>
-          
+
           {/* 선택된 필터 표시 */}
-          {renderSelectedFilters()}
+          {Object.values(filters).some(value => value !== '') && (
+            <div className="mt-4 pt-4 border-t border-gray-200">
+              <div className="flex flex-wrap gap-2">
+                {Object.entries(filters).map(([key, value]) => {
+                  if (!value) return null;
+                  const option = filterOptions[key as keyof typeof filterOptions].find(opt => opt.value === value);
+                  if (!option) return null;
+                  return (
+                    <div key={key} className="flex items-center gap-2 bg-gray-100 px-3 py-1.5 rounded-full text-sm">
+                      <span className="text-gray-700">{option.label}</span>
+                      <button
+                        onClick={() => handleFilterChange(key as keyof typeof filters, '')}
+                        className="text-gray-500 hover:text-gray-700"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -749,112 +779,17 @@ export default function ResultsTable({ results }: ResultsTableProps) {
     );
   };
 
-  // 선택된 필터 표시
-  const renderSelectedFilters = () => {
-    const selectedFilters = [];
-    
-    // 업로드 날짜 필터
-    if (filters.uploadDate) {
-      const option = filterOptions.uploadDate.find(opt => opt.value === filters.uploadDate);
-      if (option) {
-        selectedFilters.push({
-          type: 'uploadDate',
-          label: `업로드 날짜: ${option.label}`
-        });
-      }
-    }
-    
-    // 길이 필터
-    if (filters.duration) {
-      const option = filterOptions.duration.find(opt => opt.value === filters.duration);
-      if (option) {
-        selectedFilters.push({
-          type: 'duration',
-          label: `길이: ${option.label}`
-        });
-      }
-    }
-    
-    // 형식 필터
-    if (filters.videoFormat) {
-      const option = filterOptions.videoFormat.find(opt => opt.value === filters.videoFormat);
-      if (option) {
-        selectedFilters.push({
-          type: 'videoFormat',
-          label: `형식: ${option.label}`
-        });
-      }
-    }
-    
-    if (selectedFilters.length === 0) return null;
-    
-    return (
-      <div className="px-4 py-3 bg-pink-50/50 border-t border-pink-100">
-        <div className="flex flex-wrap gap-2 items-center">
-          <span className="text-xs font-medium text-gray-500">적용된 필터:</span>
-          {selectedFilters.map(filter => (
-            <div 
-              key={filter.type}
-              className="flex items-center bg-pink-100 text-pink-700 px-3 py-1 rounded-full text-xs"
-            >
-              <span>{filter.label}</span>
-              <button
-                className="ml-2 text-pink-500 hover:text-pink-700"
-                onClick={() => handleFilterChange(filter.type as keyof FilterState, '')}
-              >
-                ×
-              </button>
-            </div>
-          ))}
-          {selectedFilters.length > 0 && (
-            <button
-              className="text-xs text-pink-600 hover:text-pink-800 underline"
-              onClick={() => {
-                setFilters({
-                  uploadDate: '',
-                  duration: '',
-                  videoFormat: '',
-                  highlight: ''
-                });
-              }}
-            >
-              모두 지우기
-            </button>
-          )}
-        </div>
-      </div>
-    );
-  };
-
-  // 하이라이트 뱃지 렌더링 수정
+  // 하이라이트 뱃지 렌더링 함수 추가
   const renderHighlightBadges = (highlights: ContentHighlight[]) => {
     return (
       <div className="flex flex-wrap gap-2 mt-2">
         {highlights.map((highlight, index) => (
           <span
             key={index}
-            className={`highlight-badge badge-${highlight.type} group relative cursor-help`}
+            className={`px-2 py-1 rounded-full text-xs font-medium bg-gradient-to-r ${highlight.color} text-white shadow-sm`}
             title={highlight.description}
           >
-            {highlight.type === 'viral' && (
-              <svg className="highlight-icon viral-icon" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M12.395 2.553a1 1 0 00-1.45-.385c-.345.23-.614.558-.822.88-.214.33-.403.713-.57 1.116-.334.804-.614 1.768-.84 2.734a31.365 31.365 0 00-.613 3.58 2.64 2.64 0 01-.945-1.067c-.328-.68-.398-1.534-.398-2.654A1 1 0 005.05 6.05 6.981 6.981 0 003 11a7 7 0 1011.95-4.95c-.592-.591-.98-.985-1.348-1.467-.363-.476-.724-1.063-1.207-2.03zM12.12 15.12A3 3 0 017 13s.879.5 2.5.5c0-1 .5-4 1.25-4.5.5 1 .786 1.293 1.371 1.879A2.99 2.99 0 0113 13a2.99 2.99 0 01-.879 2.121z" clipRule="evenodd" />
-              </svg>
-            )}
-            {highlight.type === 'growing' && (
-              <svg className="highlight-icon growing-icon" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M12 7a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0V8.414l-4.293 4.293a1 1 0 01-1.414 0L8 10.414l-4.293 4.293a1 1 0 01-1.414-1.414l5-5a1 1 0 011.414 0L11 10.586 14.586 7H12z" clipRule="evenodd" />
-              </svg>
-            )}
-            {highlight.type === 'trending' && (
-              <svg className="highlight-icon trending-icon" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M5.293 7.707a1 1 0 010-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 01-1.414 1.414L11 5.414V17a1 1 0 11-2 0V5.414L6.707 7.707a1 1 0 01-1.414 0z" clipRule="evenodd" />
-              </svg>
-            )}
             {highlight.label}
-            <span className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 text-xs bg-gray-900 text-white rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
-              {highlight.description}
-            </span>
           </span>
         ))}
       </div>

@@ -44,20 +44,28 @@ export default function SearchPage() {
     
     try {
       // 검색 실행
-      const data = await searchYouTube(searchQuery);
-      setResults(data);
+      const response = await searchYouTube(searchQuery);
+      
+      // API 응답 데이터 구조 확인 및 처리
+      if (response && response.results) {
+        setResults(response.results);
+        console.log('검색 결과 설정됨:', response.results.length, '개');
+      } else {
+        console.error('API 응답 데이터 구조 오류:', response);
+        setError('검색 결과를 처리하는 중 오류가 발생했습니다.');
+      }
       
       // 검색 제한 업데이트
       if (session) {
-        const response = await fetch('/api/search-limit', {
+        const limitResponse = await fetch('/api/search-limit', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           }
         });
         
-        if (response.ok) {
-          const updatedLimit = await response.json();
+        if (limitResponse.ok) {
+          const updatedLimit = await limitResponse.json();
           setSearchLimit(updatedLimit);
         }
       }
@@ -93,7 +101,13 @@ export default function SearchPage() {
       )}
       
       {/* 검색 결과 */}
-      {results.length > 0 ? (
+      {isLoading ? (
+        <div className="container mx-auto max-w-6xl px-4 py-6">
+          <div className="flex justify-center py-16">
+            <div className="icon icon-loading h-16 w-16 bg-gradient-to-r from-red-400 to-pink-500 p-4 rounded-full shadow-lg"></div>
+          </div>
+        </div>
+      ) : results && results.length > 0 ? (
         <div className="container mx-auto w-full px-4 py-4">
           <div className="bg-white rounded-2xl shadow-lg overflow-visible border border-pink-100">
             <div className="w-full overflow-visible">
@@ -103,7 +117,7 @@ export default function SearchPage() {
             </div>
           </div>
         </div>
-      ) : !isLoading && query ? (
+      ) : query ? (
         <div className="container mx-auto max-w-6xl px-4 py-6">
           <div className="text-center py-16 px-4">
             <div className="bg-white p-8 rounded-2xl shadow-md inline-block max-w-md border border-pink-100">
@@ -114,15 +128,6 @@ export default function SearchPage() {
           </div>
         </div>
       ) : null}
-      
-      {/* 로딩 인디케이터 */}
-      {isLoading && (
-        <div className="container mx-auto max-w-6xl px-4 py-6">
-          <div className="flex justify-center py-16">
-            <div className="icon icon-loading h-16 w-16 bg-gradient-to-r from-red-400 to-pink-500 p-4 rounded-full shadow-lg"></div>
-          </div>
-        </div>
-      )}
     </div>
   );
 } 
