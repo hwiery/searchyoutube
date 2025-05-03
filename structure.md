@@ -7,18 +7,13 @@ searchyoutube/
 └── src/
     ├── app/
     │   ├── api/
-    │   │   ├── auth/
-    │   │   └── search-limit/
-    │   ├── auth/
-    │   │   └── signin/
-    │   ├── profile/
+    │   │   └── search/
     │   ├── globals.css
     │   ├── search/
     │   ├── layout.tsx
     │   └── page.tsx
     ├── components/
     │   ├── ui/
-    │   ├── auth-provider.tsx
     │   ├── filter-bar.tsx
     │   ├── navbar.tsx
     │   ├── results-table.tsx

@@ -9,6 +9,8 @@ import * as XLSX from 'xlsx';
 
 interface ResultsTableProps {
   results: YouTubeSearchResult[];
+  error?: string;
+  quotaExceeded?: boolean;
 }
 
 // 컬럼 정의를 위한 인터페이스 추가
@@ -26,7 +28,7 @@ interface FilterState {
   uploadDate: string;
   duration: string;
   videoFormat: string;
-  highlight: string;
+  contentType: string;
 }
 
 interface SortField {
@@ -34,45 +36,29 @@ interface SortField {
   path: string[];
 }
 
-interface ContentHighlight {
-  type: string;
-  label: string;
-  color: string;
-  description: string;
-}
-
-// 하이라이트 기준 정의
-const HIGHLIGHT_CRITERIA = {
-  VIRAL_VIEW_RATE: 3,
-  WEEKLY_SUB_GROWTH_RATE: 0.3,
-  MONTHLY_SUB_GROWTH_RATE: 0.5,
-  WEEKLY_VIEW_GROWTH_RATE: 1,
-  MONTHLY_VIEW_GROWTH_RATE: 2,
-};
-
-export default function ResultsTable({ results }: ResultsTableProps) {
+export default function ResultsTable({ results, error, quotaExceeded }: ResultsTableProps) {
   const [sortConfig, setSortConfig] = useState<{ field: string; direction: 'asc' | 'desc' }>({
     field: 'publishedAt',
     direction: 'desc'
   });
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(10); // 기본값 10개로 설정
+  const [itemsPerPage, setItemsPerPage] = useState(10);
   const [displayedResults, setDisplayedResults] = useState<YouTubeSearchResult[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [filters, setFilters] = useState<FilterState>({
     uploadDate: '',
     duration: '',
     videoFormat: '',
-    highlight: ''
+    contentType: ''
   });
   const tableRef = useRef<HTMLDivElement>(null);
   const observerRef = useRef<IntersectionObserver | null>(null);
   const loadMoreRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [expandedTags, setExpandedTags] = useState<{ [key: string]: boolean }>({});
-  const [expandedTopics, setExpandedTopics] = useState<{ [key: string]: boolean }>({});
   const [isFilterExpanded, setIsFilterExpanded] = useState(false);
   const [totalPages, setTotalPages] = useState(1);
+  const [isPageChanging, setIsPageChanging] = useState(false);
 
   // 필터 옵션 정의 수정
   const filterOptions = {
@@ -86,25 +72,26 @@ export default function ResultsTable({ results }: ResultsTableProps) {
     ],
     duration: [
       { value: '', label: '전체' },
-      { value: 'short', label: '4분 미만' },
-      { value: 'medium', label: '4~20분' },
-      { value: 'long', label: '20분 초과' }
+      { value: '1min', label: '1분 이하' },
+      { value: '5min', label: '5분 이하' },
+      { value: '10min', label: '10분 이하' },
+      { value: '20min', label: '20분 이하' },
+      { value: '30min', label: '30분 이하' },
+      { value: 'over30min', label: '30분 초과' }
     ],
     videoFormat: [
       { value: '', label: '전체' },
       { value: 'shorts', label: 'Shorts' },
       { value: 'long', label: 'Long' }
     ],
-    highlight: [
+    contentType: [
       { value: '', label: '전체' },
-      { value: 'any', label: '주목할 만한 콘텐츠' },
-      { value: 'viral', label: '바이럴 콘텐츠' },
-      { value: 'growing', label: '급성장 채널' },
-      { value: 'trending', label: '트렌딩 콘텐츠' },
-      { value: 'viral+growing', label: '바이럴 + 급성장' },
-      { value: 'viral+trending', label: '바이럴 + 트렌딩' },
-      { value: 'growing+trending', label: '급성장 + 트렌딩' },
-      { value: 'viral+growing+trending', label: '바이럴 + 급성장 + 트렌딩' }
+      { value: 'music', label: '음악' },
+      { value: 'gaming', label: '게임' },
+      { value: 'education', label: '교육' },
+      { value: 'entertainment', label: '엔터테인먼트' },
+      { value: 'news', label: '뉴스' },
+      { value: 'tech', label: '기술' }
     ]
   };
 
@@ -115,7 +102,7 @@ export default function ResultsTable({ results }: ResultsTableProps) {
       [type]: value
     }));
     setCurrentPage(1);
-    setDisplayedResults([]); // 표시된 결과 초기화
+    setDisplayedResults([]);
   };
 
   // 날짜 필터링 함수
@@ -156,22 +143,6 @@ export default function ResultsTable({ results }: ResultsTableProps) {
     }
   };
 
-  // 기능별 필터링 함수
-  const filterByFeatures = (result: YouTubeSearchResult, features: string[]): boolean => {
-    return features.every(feature => {
-      switch (feature) {
-        case '4k':
-          return result.definition === '4k';
-        case 'hd':
-          return result.definition === 'hd';
-        case 'caption':
-          return result.caption;
-        default:
-          return true;
-      }
-    });
-  };
-
   // duration을 분으로 변환하는 함수
   const parseDurationToMinutes = (duration: string): number => {
     const matches = duration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
@@ -209,468 +180,269 @@ export default function ResultsTable({ results }: ResultsTableProps) {
     return hours * 3600 + minutes * 60 + seconds;
   };
 
-  // 하이라이트 타입을 체크하는 함수
-  const getHighlightTypes = (result: YouTubeSearchResult): string[] => {
-    const highlights: string[] = [];
-    
-    // 바이럴 콘텐츠 체크
-    if (result.viewCount && result.subscriberCount && 
-        result.viewCount > result.subscriberCount * HIGHLIGHT_CRITERIA.VIRAL_VIEW_RATE) {
-      highlights.push('viral');
-    }
-    
-    // 급성장 채널 체크
-    if (result.stats?.subscribers?.weekChange && result.subscriberCount) {
-      const weeklyGrowthRate = result.stats.subscribers.weekChange / result.subscriberCount;
-      if (weeklyGrowthRate > HIGHLIGHT_CRITERIA.WEEKLY_SUB_GROWTH_RATE) {
-        highlights.push('growing');
-      }
-    }
-    
-    // 트렌딩 콘텐츠 체크
-    if (result.stats?.views?.weekChange && result.viewCount) {
-      const weeklyViewGrowthRate = result.stats.views.weekChange / result.viewCount;
-      if (weeklyViewGrowthRate > HIGHLIGHT_CRITERIA.WEEKLY_VIEW_GROWTH_RATE) {
-        highlights.push('trending');
-      }
-    }
-    
-    return highlights;
-  };
-
-  // 하이라이트 정보를 가져오는 함수
-  const getHighlights = (result: YouTubeSearchResult): ContentHighlight[] => {
-    const highlightTypes = getHighlightTypes(result);
-    const highlights: ContentHighlight[] = [];
-    
-    if (highlightTypes.includes('viral')) {
-      const viewToSubRatio = result.viewCount && result.subscriberCount ? 
-        (result.viewCount / result.subscriberCount).toFixed(1) : '0';
-      highlights.push({
-        type: 'viral',
-        label: '바이럴',
-        color: 'from-yellow-400 to-orange-500',
-        description: `조회수가 구독자 수의 ${viewToSubRatio}배`
-      });
-    }
-    
-    if (highlightTypes.includes('growing')) {
-      const weeklySubGrowthRate = result.stats?.subscribers?.weekChange && result.subscriberCount ?
-        ((result.stats.subscribers.weekChange / result.subscriberCount) * 100).toFixed(1) : '0';
-      highlights.push({
-        type: 'growing',
-        label: '급성장',
-        color: 'from-green-400 to-emerald-500',
-        description: `주간 구독자 ${weeklySubGrowthRate}% 증가`
-      });
-    }
-    
-    if (highlightTypes.includes('trending')) {
-      const weeklyViewGrowthRate = result.stats?.views?.weekChange && result.viewCount ?
-        ((result.stats.views.weekChange / result.viewCount) * 100).toFixed(1) : '0';
-      highlights.push({
-        type: 'trending',
-        label: '트렌딩',
-        color: 'from-blue-400 to-indigo-500',
-        description: `주간 조회수 ${weeklyViewGrowthRate}% 증가`
-      });
-    }
-    
-    return highlights;
-  };
-
-  // 필터링된 결과 계산 수정
-  const filteredResults = results.filter(result => {
-    if (!result) return false;
-    
-    const dateMatch = !filters.uploadDate || filterByDate(result.publishedAt, filters.uploadDate);
-    const durationMatch = !filters.duration || filterByDuration(result.duration || '', filters.duration);
-    const formatMatch = !filters.videoFormat || getVideoFormat(result).format === filters.videoFormat;
-    
-    // 하이라이트 필터 적용
-    let highlightMatch = true;
-    if (filters.highlight) {
-      const highlightTypes = getHighlightTypes(result);
-      
-      switch (filters.highlight) {
-        case 'any':
-          highlightMatch = highlightTypes.length > 0;
-          break;
-        case 'viral':
-          highlightMatch = highlightTypes.includes('viral');
-          break;
-        case 'growing':
-          highlightMatch = highlightTypes.includes('growing');
-          break;
-        case 'trending':
-          highlightMatch = highlightTypes.includes('trending');
-          break;
-        case 'viral+growing':
-          highlightMatch = highlightTypes.includes('viral') && highlightTypes.includes('growing');
-          break;
-        case 'viral+trending':
-          highlightMatch = highlightTypes.includes('viral') && highlightTypes.includes('trending');
-          break;
-        case 'growing+trending':
-          highlightMatch = highlightTypes.includes('growing') && highlightTypes.includes('trending');
-          break;
-        case 'viral+growing+trending':
-          highlightMatch = highlightTypes.includes('viral') && highlightTypes.includes('growing') && highlightTypes.includes('trending');
-          break;
-        default:
-          highlightMatch = true;
-      }
-    }
-    
-    return dateMatch && durationMatch && formatMatch && highlightMatch;
-  });
-
-  // 페이지네이션 계산
+  // 정렬 및 필터링 적용
   useEffect(() => {
-    setTotalPages(Math.ceil(filteredResults.length / itemsPerPage));
-    // 필터나 아이템 개수가 변경되면 첫 페이지로 이동
-    if (currentPage > Math.ceil(filteredResults.length / itemsPerPage)) {
-    setCurrentPage(1);
+    if (!results.length) return;
+
+    let filteredResults = [...results];
+
+    // 필터 적용
+    if (filters.uploadDate) {
+      filteredResults = filteredResults.filter(result => 
+        filterByDate(result.publishedAt, filters.uploadDate)
+      );
     }
-  }, [filteredResults.length, itemsPerPage]);
 
-  // 중첩된 객체에서 값을 가져오는 함수
-  const getNestedValue = (obj: any, path: string[]): any => {
-    return path.reduce((acc, curr) => (acc && acc[curr] !== undefined ? acc[curr] : undefined), obj);
-  };
+    if (filters.duration && filteredResults[0]?.duration) {
+      filteredResults = filteredResults.filter(result => 
+        filterByDuration(result.duration!, filters.duration)
+      );
+    }
 
-  // 정렬 처리 함수 수정
-  const handleSort = (field: string, path: string[]) => {
-    setSortConfig(prev => ({
-      field,
-      direction: prev.field === field && prev.direction === 'desc' ? 'asc' : 'desc'
-    }));
-  };
+    if (filters.videoFormat) {
+      filteredResults = filteredResults.filter(result => {
+        const format = getVideoFormat(result);
+        return format.format === filters.videoFormat;
+      });
+    }
 
-  // 현재 페이지의 결과 계산
-  useEffect(() => {
-    // 정렬된 결과 계산
-    const sortedResults = [...filteredResults].sort((a, b) => {
-      const fieldConfig = columns.find(col => col.id === sortConfig.field);
-      if (!fieldConfig?.path) return 0;
+    // 정렬 적용
+    filteredResults.sort((a, b) => {
+      const aValue = a[sortConfig.field as keyof YouTubeSearchResult];
+      const bValue = b[sortConfig.field as keyof YouTubeSearchResult];
 
-      const valueA = getNestedValue(a, fieldConfig.path);
-      const valueB = getNestedValue(b, fieldConfig.path);
-
-      // 숫자 필드 처리
-      if (typeof valueA === 'number' && typeof valueB === 'number') {
-        return sortConfig.direction === 'asc' ? valueA - valueB : valueB - valueA;
+      if (typeof aValue === 'string' && typeof bValue === 'string') {
+        return sortConfig.direction === 'asc' 
+          ? aValue.localeCompare(bValue)
+          : bValue.localeCompare(aValue);
       }
 
-      // 날짜 필드 처리
-      if (fieldConfig.id === 'publishedAt') {
-        const dateA = new Date(valueA || 0).getTime();
-        const dateB = new Date(valueB || 0).getTime();
-        return sortConfig.direction === 'asc' ? dateA - dateB : dateB - dateA;
+      if (typeof aValue === 'number' && typeof bValue === 'number') {
+        return sortConfig.direction === 'asc'
+          ? aValue - bValue
+          : bValue - aValue;
       }
 
-      // 문자열 필드 처리
-      const strA = String(valueA || '');
-      const strB = String(valueB || '');
-      return sortConfig.direction === 'asc' ? 
-        strA.localeCompare(strB) : 
-        strB.localeCompare(strA);
+      return 0;
     });
 
-    // 현재 페이지의 결과 계산
+    // 페이지네이션 적용
     const startIndex = (currentPage - 1) * itemsPerPage;
-    const endIndex = Math.min(startIndex + itemsPerPage, sortedResults.length);
-    setDisplayedResults(sortedResults.slice(startIndex, endIndex));
-  }, [filteredResults, sortConfig, currentPage, itemsPerPage]);
+    const endIndex = startIndex + itemsPerPage;
+    const paginatedResults = filteredResults.slice(startIndex, endIndex);
 
-  // 페이지 변경 핸들러
-  const handlePageChange = (page: number) => {
-    setCurrentPage(page);
+    setDisplayedResults(paginatedResults);
+    setTotalPages(Math.ceil(filteredResults.length / itemsPerPage));
+  }, [results, filters, sortConfig, currentPage, itemsPerPage]);
+
+  // 무한 스크롤 설정
+  useEffect(() => {
+    if (!loadMoreRef.current) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && currentPage < totalPages) {
+          setCurrentPage(prev => prev + 1);
+        }
+      },
+      { threshold: 0.1 }
+    );
+
+    observer.observe(loadMoreRef.current);
+    observerRef.current = observer;
+
+    return () => {
+      if (observerRef.current) {
+        observerRef.current.disconnect();
+      }
+    };
+  }, [currentPage, totalPages]);
+
+  // 컬럼 정의
+  const columns: ColumnDefinition[] = [
+    { id: 'thumbnail', width: 'w-48', label: '썸네일', sortable: false },
+    { id: 'videoFormat', width: 'w-24', label: '형식', sortable: true, field: 'videoFormat' },
+    { id: 'title', width: 'w-96', label: '제목', sortable: true, field: 'title' },
+    { id: 'channel', width: 'w-48', label: '채널', sortable: true, field: 'channelTitle' },
+    { id: 'subscribers', width: 'w-32', label: '구독자', sortable: true, field: 'subscriberCount' },
+    { id: 'subChange', width: 'w-48', label: '구독자 변화', sortable: true, path: ['stats', 'subscribers'] },
+    { id: 'publishedAt', width: 'w-32', label: '업로드', sortable: true, field: 'publishedAt' },
+    { id: 'duration', width: 'w-24', label: '길이', sortable: true, field: 'duration' },
+    { id: 'views', width: 'w-32', label: '조회수', sortable: true, field: 'viewCount' },
+    { id: 'viewChange', width: 'w-48', label: '조회수 변화', sortable: true, path: ['stats', 'views'] },
+    { id: 'likes', width: 'w-32', label: '좋아요', sortable: true, field: 'likeCount' },
+    { id: 'comments', width: 'w-32', label: '댓글', sortable: true, field: 'commentCount' }
+  ];
+
+  // 정렬 핸들러
+  const handleSort = (field: string) => {
+    setSortConfig(prev => ({
+      field,
+      direction: prev.field === field && prev.direction === 'asc' ? 'desc' : 'asc'
+    }));
   };
 
-  // 아이템 개수 변경 핸들러
+  // 페이지 변경 핸들러 수정
+  const handlePageChange = (page: number) => {
+    if (isPageChanging) return;
+    setIsPageChanging(true);
+    setCurrentPage(page);
+    setTimeout(() => setIsPageChanging(false), 100);
+  };
+
+  // 페이지당 항목 수 변경 핸들러
   const handleItemsPerPageChange = (count: number) => {
     setItemsPerPage(count);
-    setCurrentPage(1); // 개수 변경 시 첫 페이지로 이동
+    setCurrentPage(1);
   };
 
-  // 엑셀 다운로드 함수
+  // 엑셀 다운로드 핸들러
   const handleExcelDownload = () => {
-    // 엑셀에 포함할 데이터 준비
-    const excelData = displayedResults.map(result => ({
-      '제목': result.title,
-      '채널': result.channelTitle,
-      '업로드 날짜': formatDate(result.publishedAt),
-      '조회수': result.viewCount,
-      '좋아요': result.likeCount,
-      '댓글': result.commentCount,
-      '길이': formatDuration(result.duration || ''),
-      '구독자수': result.subscriberCount || 0,
-      '조회수 변화(1주일)': result.stats?.views.weekChange || 0,
-      '조회수 변화(1달)': result.stats?.views.monthChange || 0,
-      '구독자 변화(1주일)': result.stats?.subscribers.weekChange || 0,
-      '구독자 변화(1달)': result.stats?.subscribers.monthChange || 0
+    const data = displayedResults.map(result => ({
+      제목: result.title,
+      채널: result.channelTitle,
+      업로드일: formatDate(result.publishedAt),
+      길이: formatDuration(result.duration || ''),
+      조회수: formatNumber(result.viewCount),
+      좋아요: formatNumber(result.likeCount),
+      댓글수: formatNumber(result.commentCount)
     }));
 
-    // 워크시트 생성
-    const worksheet = XLSX.utils.json_to_sheet(excelData);
-    
-    // 워크북 생성 및 워크시트 추가
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, '검색 결과');
-    
-    // 파일 이름 생성 (현재 날짜 포함)
-    const fileName = `YouTube_검색결과_${new Date().toISOString().split('T')[0]}.xlsx`;
-    
-    // 엑셀 파일 다운로드
-    XLSX.writeFile(workbook, fileName);
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, '검색결과');
+    XLSX.writeFile(wb, 'youtube_search_results.xlsx');
   };
 
-  // 페이지네이션 UI 렌더링
+  // 페이지네이션 렌더링
   const renderPagination = () => {
-    if (totalPages <= 1) return null;
-
-    const pageNumbers = [];
-    const maxPageButtons = 5; // 한 번에 표시할 최대 페이지 버튼 수
+    const pages = [];
+    const maxPages = 5;
     
-    let startPage = Math.max(1, currentPage - Math.floor(maxPageButtons / 2));
-    let endPage = Math.min(totalPages, startPage + maxPageButtons - 1);
-    
-    if (endPage - startPage + 1 < maxPageButtons) {
-      startPage = Math.max(1, endPage - maxPageButtons + 1);
+    let startPage = 1;
+    if (totalPages > maxPages) {
+      if (currentPage <= Math.ceil(maxPages / 2)) {
+        startPage = 1;
+      } else if (currentPage >= totalPages - Math.floor(maxPages / 2)) {
+        startPage = totalPages - maxPages + 1;
+      } else {
+        startPage = currentPage - Math.floor(maxPages / 2);
+      }
     }
     
+    const endPage = Math.min(startPage + maxPages - 1, totalPages);
+
     for (let i = startPage; i <= endPage; i++) {
-      pageNumbers.push(i);
+      pages.push(
+        <button
+          key={i}
+          onClick={() => handlePageChange(i)}
+          disabled={isPageChanging}
+          className={`px-3 py-1 rounded ${
+            currentPage === i
+              ? 'bg-pink-500 text-white'
+              : 'bg-white text-gray-700 hover:bg-pink-100'
+          } ${isPageChanging ? 'opacity-50 cursor-not-allowed' : ''}`}
+        >
+          {i}
+        </button>
+      );
     }
 
     return (
-      <div className="flex justify-center items-center mt-6 mb-4 space-x-2">
-        {/* 이전 페이지 버튼 */}
+      <div className="flex justify-center items-center space-x-2 mt-4">
         <button
-          onClick={() => handlePageChange(Math.max(1, currentPage - 1))}
-          disabled={currentPage === 1}
-          className={`px-3 py-2 rounded-full transition-all duration-200 ${
-            currentPage === 1
-              ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
-              : 'bg-gradient-to-r from-pink-100 to-purple-100 text-pink-800 hover:from-pink-200 hover:to-purple-200'
-          }`}
-          aria-label="이전 페이지"
+          onClick={() => handlePageChange(currentPage - 1)}
+          disabled={currentPage === 1 || isPageChanging}
+          className="px-3 py-1 rounded bg-white text-gray-700 hover:bg-pink-100 disabled:opacity-50"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
+          이전
         </button>
-        
-        {/* 첫 페이지 버튼 (시작 페이지가 1이 아닌 경우) */}
         {startPage > 1 && (
           <>
             <button
               onClick={() => handlePageChange(1)}
-              className="px-4 py-2 rounded-full bg-gradient-to-r from-pink-100 to-purple-100 text-pink-800 hover:from-pink-200 hover:to-purple-200 transition-all duration-200"
+              disabled={isPageChanging}
+              className="px-3 py-1 rounded bg-white text-gray-700 hover:bg-pink-100"
             >
               1
             </button>
             {startPage > 2 && <span className="px-2">...</span>}
           </>
         )}
-        
-        {/* 페이지 번호 버튼 */}
-        {pageNumbers.map(number => (
-          <button
-            key={number}
-            onClick={() => handlePageChange(number)}
-            className={`px-4 py-2 rounded-full transition-all duration-200 ${
-              currentPage === number
-                ? 'bg-gradient-to-r from-pink-400 to-purple-400 text-gray-800 font-bold shadow-md transform scale-105'
-                : 'bg-gradient-to-r from-pink-100 to-purple-100 text-pink-800 hover:from-pink-200 hover:to-purple-200'
-            }`}
-          >
-            {number}
-          </button>
-        ))}
-        
-        {/* 마지막 페이지 버튼 (끝 페이지가 totalPages가 아닌 경우) */}
+        {pages}
         {endPage < totalPages && (
           <>
             {endPage < totalPages - 1 && <span className="px-2">...</span>}
             <button
               onClick={() => handlePageChange(totalPages)}
-              className="px-4 py-2 rounded-full bg-gradient-to-r from-pink-100 to-purple-100 text-pink-800 hover:from-pink-200 hover:to-purple-200 transition-all duration-200"
+              disabled={isPageChanging}
+              className="px-3 py-1 rounded bg-white text-gray-700 hover:bg-pink-100"
             >
               {totalPages}
             </button>
           </>
         )}
-        
-        {/* 다음 페이지 버튼 */}
-            <button
-          onClick={() => handlePageChange(Math.min(totalPages, currentPage + 1))}
-          disabled={currentPage === totalPages}
-          className={`px-3 py-2 rounded-full transition-all duration-200 ${
-            currentPage === totalPages
-              ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
-              : 'bg-gradient-to-r from-pink-100 to-purple-100 text-pink-800 hover:from-pink-200 hover:to-purple-200'
-          }`}
-          aria-label="다음 페이지"
+        <button
+          onClick={() => handlePageChange(currentPage + 1)}
+          disabled={currentPage === totalPages || isPageChanging}
+          className="px-3 py-1 rounded bg-white text-gray-700 hover:bg-pink-100 disabled:opacity-50"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-          </svg>
-            </button>
+          다음
+        </button>
       </div>
     );
   };
 
-  // 아이템 개수 선택 UI 렌더링
+  // 페이지당 항목 수 선택기 렌더링
   const renderItemsPerPageSelector = () => {
-    const options = [10, 30, 50, 100];
-
-  return (
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex space-x-2">
-          {options.map(option => (
-              <button
-              key={option}
-              onClick={() => handleItemsPerPageChange(option)}
-              className={`px-4 py-2 text-sm rounded-full transition-all duration-200 ${
-                itemsPerPage === option
-                  ? 'bg-gradient-to-r from-pink-400 to-purple-400 text-gray-800 font-bold shadow-md transform scale-105'
-                  : 'bg-gradient-to-r from-pink-100 to-purple-100 text-pink-800 hover:from-pink-200 hover:to-purple-200'
-              }`}
-            >
-              {option}개 표시
-              </button>
-          ))}
-        </div>
-        
-        <div className="ml-auto">
-          {/* 엑셀 다운로드 버튼 */}
-          <button
-            onClick={handleExcelDownload}
-            className="px-4 py-2 bg-gradient-to-r from-pink-300 to-purple-300 text-gray-800 font-bold rounded-full hover:from-pink-400 hover:to-purple-400 transition-all duration-200 flex items-center shadow-md transform hover:scale-105"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-            </svg>
-            엑셀 다운로드
-          </button>
-        </div>
+    return (
+      <div className="flex items-center space-x-2">
+        <span className="text-sm text-gray-600">페이지당 항목:</span>
+        <select
+          value={itemsPerPage}
+          onChange={(e) => handleItemsPerPageChange(Number(e.target.value))}
+          className="border rounded px-2 py-1 text-sm"
+        >
+          <option value={10}>10</option>
+          <option value={20}>20</option>
+          <option value={50}>50</option>
+          <option value={100}>100</option>
+        </select>
       </div>
     );
   };
 
-  // 필터 UI 렌더링 수정
+  // 필터 렌더링
   const renderFilters = () => {
     return (
-      <div className="w-full">
-        {/* 필터 섹션 */}
-        <div className="bg-white p-4 border-b border-gray-200">
-          <div className="flex flex-col space-y-4">
-            {/* 업로드 날짜 필터 */}
-            <div className="flex items-start">
-              <div className="w-32 flex-shrink-0 pt-2 text-sm font-medium text-gray-700">업로드 날짜</div>
-              <div className="flex-1 flex flex-wrap gap-2">
-                {filterOptions.uploadDate.map((option) => (
-                  <button
-                    key={option.value}
-                    onClick={() => handleFilterChange('uploadDate', option.value)}
-                    className={`px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 ${
-                      filters.uploadDate === option.value
-                        ? 'bg-gradient-to-r from-red-400 to-pink-500 text-white shadow-md'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    }`}
-                  >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* 길이 필터 */}
-            <div className="flex items-start">
-              <div className="w-32 flex-shrink-0 pt-2 text-sm font-medium text-gray-700">길이</div>
-              <div className="flex-1 flex flex-wrap gap-2">
-                {filterOptions.duration.map((option) => (
-                  <button
-                    key={option.value}
-                    onClick={() => handleFilterChange('duration', option.value)}
-                    className={`px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 ${
-                      filters.duration === option.value
-                        ? 'bg-gradient-to-r from-red-400 to-pink-500 text-white shadow-md'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    }`}
-                  >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* 형식 필터 */}
-            <div className="flex items-start">
-              <div className="w-32 flex-shrink-0 pt-2 text-sm font-medium text-gray-700">형식</div>
-              <div className="flex-1 flex flex-wrap gap-2">
-                {filterOptions.videoFormat.map((option) => (
-                  <button
-                    key={option.value}
-                    onClick={() => handleFilterChange('videoFormat', option.value)}
-                    className={`px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 ${
-                      filters.videoFormat === option.value
-                        ? 'bg-gradient-to-r from-red-400 to-pink-500 text-white shadow-md'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    }`}
-                  >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* 하이라이트 필터 */}
-            <div className="flex items-start">
-              <div className="w-32 flex-shrink-0 pt-2 text-sm font-medium text-gray-700">하이라이트</div>
-              <div className="flex-1 flex flex-wrap gap-2">
-                {filterOptions.highlight.map((option) => (
-                  <button
-                    key={option.value}
-                    onClick={() => handleFilterChange('highlight', option.value)}
-                    className={`px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 ${
-                      filters.highlight === option.value
-                        ? 'bg-gradient-to-r from-red-400 to-pink-500 text-white shadow-md'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    }`}
-                  >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* 선택된 필터 표시 */}
-          {Object.values(filters).some(value => value !== '') && (
-            <div className="mt-4 pt-4 border-t border-gray-200">
+      <div className="bg-white p-4 rounded-lg shadow-sm mb-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {Object.entries(filterOptions).map(([key, options]) => (
+            <div key={key} className="space-y-2">
+              <label className="block text-sm font-medium text-gray-700">
+                {key === 'uploadDate' ? '업로드 날짜' :
+                 key === 'duration' ? '영상 길이' :
+                 key === 'videoFormat' ? '영상 형식' :
+                 '콘텐츠 유형'}
+              </label>
               <div className="flex flex-wrap gap-2">
-                {Object.entries(filters).map(([key, value]) => {
-                  if (!value) return null;
-                  const option = filterOptions[key as keyof typeof filterOptions].find(opt => opt.value === value);
-                  if (!option) return null;
-                  return (
-                    <div key={key} className="flex items-center gap-2 bg-gray-100 px-3 py-1.5 rounded-full text-sm">
-                      <span className="text-gray-700">{option.label}</span>
-                      <button
-                        onClick={() => handleFilterChange(key as keyof typeof filters, '')}
-                        className="text-gray-500 hover:text-gray-700"
-                      >
-                        ×
-                      </button>
-                    </div>
-                  );
-                })}
+                {options.map(option => (
+                  <button
+                    key={option.value}
+                    onClick={() => handleFilterChange(key as keyof FilterState, option.value)}
+                    className={`px-3 py-1 rounded-full text-sm transition-colors ${
+                      filters[key as keyof FilterState] === option.value
+                        ? 'bg-pink-500 text-white'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
               </div>
             </div>
-          )}
+          ))}
         </div>
       </div>
     );
@@ -678,24 +450,11 @@ export default function ResultsTable({ results }: ResultsTableProps) {
 
   // 정렬 아이콘 렌더링
   const renderSortIcon = (field: string) => {
-    if (!field) return null;
-    
-    return (
-      <span className="ml-1 inline-block">
-        {sortConfig.field === field ? (
-          sortConfig.direction === 'asc' ? (
-            <span className="icon icon-arrow-up text-pink-500" />
-          ) : (
-            <span className="icon icon-arrow-down text-pink-500" />
-          )
-        ) : (
-          <span className="icon icon-arrow-down text-gray-300" />
-        )}
-      </span>
-    );
+    if (sortConfig.field !== field) return null;
+    return sortConfig.direction === 'asc' ? '↑' : '↓';
   };
 
-  // 태그 토글 함수
+  // 태그 토글 핸들러
   const toggleTags = (resultId: string) => {
     setExpandedTags(prev => ({
       ...prev,
@@ -703,510 +462,208 @@ export default function ResultsTable({ results }: ResultsTableProps) {
     }));
   };
 
-  // 주제 토글 함수
-  const toggleTopics = (resultId: string) => {
-    setExpandedTopics(prev => ({
-      ...prev,
-      [resultId]: !prev[resultId]
-    }));
-  };
-
-  // 태그 렌더링 함수
+  // 태그 렌더링
   const renderTags = (tags: string[] | undefined, resultId: string) => {
-    if (!tags || tags.length === 0) return '태그 없음';
-    
+    if (!tags || tags.length === 0) return null;
+
     const isExpanded = expandedTags[resultId];
-    const visibleTags = isExpanded ? tags : tags.slice(0, 6);
-    const remainingCount = tags.length - 6;
+    const displayTags = isExpanded ? tags : tags.slice(0, 3);
 
     return (
-      <div className="relative">
-        <div className={`flex flex-wrap gap-1 ${!isExpanded ? 'max-h-[3.5rem]' : ''}`}>
-          {visibleTags.map((tag, index) => (
-            <span key={index} className="inline-block px-2 py-1 bg-pink-100 text-pink-700 rounded-full text-xs whitespace-nowrap">
-              {tag}
-            </span>
-          ))}
-        </div>
-        {tags.length > 6 && (
-          <div className="absolute bottom-0 right-0 bg-white">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                toggleTags(resultId);
-              }}
-              className="px-2 py-1 bg-gray-100 text-gray-700 rounded-full text-xs whitespace-nowrap hover:bg-gray-200 transition-colors duration-200"
-            >
-              {isExpanded ? '접기' : `+${remainingCount}개 더보기`}
-            </button>
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  // 주제 렌더링 함수
-  const renderTopics = (topics: Array<{ name: string; wikiPath: string | null }> | undefined, resultId: string) => {
-    if (!topics || topics.length === 0) return '주제 없음';
-    
-    const isExpanded = expandedTopics[resultId];
-    const visibleTopics = isExpanded ? topics : topics.slice(0, 2);
-    const remainingCount = topics.length - 2;
-
-    return (
-      <div className="relative">
-        <div className={`flex flex-wrap gap-1 ${!isExpanded ? 'max-h-[3.5rem]' : ''}`}>
-          {visibleTopics.map((topic, index) => (
-            <span key={index} className="inline-block px-2 py-1 bg-blue-100 text-blue-700 rounded-full text-xs whitespace-nowrap">
-              {topic.name}
-            </span>
-          ))}
-        </div>
-        {topics.length > 2 && (
-          <div className="absolute bottom-0 right-0 bg-white">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                toggleTopics(resultId);
-              }}
-              className="px-2 py-1 bg-gray-100 text-gray-700 rounded-full text-xs whitespace-nowrap hover:bg-gray-200 transition-colors duration-200"
-            >
-              {isExpanded ? '접기' : `+${remainingCount}개 더보기`}
-            </button>
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  // 하이라이트 뱃지 렌더링 함수 추가
-  const renderHighlightBadges = (highlights: ContentHighlight[]) => {
-    return (
-      <div className="flex flex-wrap gap-2 mt-2">
-        {highlights.map((highlight, index) => (
+      <div className="flex flex-wrap gap-1">
+        {displayTags.map((tag, index) => (
           <span
             key={index}
-            className={`px-2 py-1 rounded-full text-xs font-medium bg-gradient-to-r ${highlight.color} text-white shadow-sm`}
-            title={highlight.description}
+            className="px-2 py-1 bg-pink-100 text-pink-800 text-xs rounded-full"
           >
-            {highlight.label}
+            {tag}
           </span>
         ))}
+        {tags.length > 3 && (
+          <button
+            onClick={() => toggleTags(resultId)}
+            className="text-pink-500 text-xs hover:underline"
+          >
+            {isExpanded ? '접기' : `+${tags.length - 3}개 더보기`}
+          </button>
+        )}
       </div>
     );
   };
 
-  // 테이블 셀 렌더링 함수
+  // 셀 렌더링
   const renderCell = (col: ColumnDefinition, result: YouTubeSearchResult): React.ReactElement => {
-    const highlights = getHighlights(result);
-    
     switch (col.id) {
       case 'thumbnail':
         return (
-          <td key={col.id} className="px-4 py-4">
+          <div className="relative w-48 h-27">
             <Image
               src={result.thumbnailUrl}
               alt={result.title}
-              width={120}
-              height={68}
-              className="rounded-lg"
+              width={192}
+              height={108}
+              className="object-cover rounded"
             />
-          </td>
+          </div>
+        );
+      case 'videoFormat':
+        const format = getVideoFormat(result);
+        return (
+          <span className={`px-2 py-1 rounded-full text-xs ${
+            format.format === 'shorts' ? 'bg-pink-100 text-pink-800' : 'bg-blue-100 text-blue-800'
+          }`}>
+            {format.label}
+          </span>
+        );
+      case 'subChange':
+        return (
+          <div className="space-y-1">
+            <div className="text-xs">
+              <span className="text-green-600">주간: {formatNumber(result.stats?.subscribers?.weekChange || 0)}</span>
+            </div>
+            <div className="text-xs">
+              <span className="text-blue-600">월간: {formatNumber(result.stats?.subscribers?.monthChange || 0)}</span>
+            </div>
+          </div>
+        );
+      case 'viewChange':
+        return (
+          <div className="space-y-1">
+            <div className="text-xs">
+              <span className="text-green-600">주간: {formatNumber(result.stats?.views?.weekChange || 0)}</span>
+            </div>
+            <div className="text-xs">
+              <span className="text-blue-600">월간: {formatNumber(result.stats?.views?.monthChange || 0)}</span>
+            </div>
+          </div>
         );
       case 'title':
         return (
-          <td key={col.id} className="px-4 py-4">
-            <div className="flex flex-col">
-              <Link href={`https://www.youtube.com/watch?v=${result.id}`} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
-                {result.title}
-              </Link>
-              {highlights.length > 0 && renderHighlightBadges(highlights)}
-            </div>
-          </td>
-        );
-      case 'description':
-        return (
-          <td key={col.id} className="px-4 py-4">
-            <div 
-              className="line-clamp-2"
-              title={result.description}
+          <div className="flex flex-col">
+            <Link
+              href={`https://www.youtube.com/watch?v=${result.videoId}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-600 hover:underline font-medium"
             >
-              {result.description}
-            </div>
-          </td>
+              {result.title}
+            </Link>
+            {renderTags(result.tags, result.id)}
+          </div>
+        );
+      case 'channel':
+        return (
+          <Link
+            href={`https://www.youtube.com/channel/${result.channelId}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-gray-600 hover:underline"
+          >
+            {result.channelTitle}
+          </Link>
         );
       case 'publishedAt':
-        return (
-          <td key={col.id} className="px-4 py-4">
-            {formatDate(result.publishedAt)}
-          </td>
-        );
+        return <span>{formatDate(result.publishedAt)}</span>;
       case 'duration':
-        return (
-          <td key={col.id} className="px-4 py-4">
-            {formatDuration(result.duration || '')}
-          </td>
-        );
-      case 'viewCount':
-        const isViral = result.viewCount && result.subscriberCount && 
-          result.viewCount > result.subscriberCount * HIGHLIGHT_CRITERIA.VIRAL_VIEW_RATE;
-        return (
-          <td key={col.id} className={`px-4 py-4 ${isViral ? 'highlight-viral highlight-cell' : ''}`}>
-            {formatNumber(result.viewCount as number || 0)}
-          </td>
-        );
-      case 'weekViewChange':
-        const weeklyViewGrowthRate = result.stats?.views?.weekChange 
-          ? result.stats.views.weekChange / result.viewCount 
-          : 0;
-        return (
-          <td className={`${col.width} px-4 py-2 text-right ${
-            weeklyViewGrowthRate > HIGHLIGHT_CRITERIA.WEEKLY_VIEW_GROWTH_RATE
-              ? 'highlight-trending highlight-cell'
-              : ''
-          }`}>
-            {result.stats?.views?.weekChange !== undefined && (
-              <>
-                {result.stats.views.weekChange > 0 ? '+' : ''}
-                {formatNumber(result.stats.views.weekChange)}
-                {weeklyViewGrowthRate > HIGHLIGHT_CRITERIA.WEEKLY_VIEW_GROWTH_RATE && (
-                  <span className="ml-1 text-xs text-blue-600">
-                    ({(weeklyViewGrowthRate * 100).toFixed(0)}%↑)
-                  </span>
-                )}
-              </>
-            )}
-          </td>
-        );
-      case 'monthViewChange':
-        return (
-          <td className={`${col.width} px-4 py-2 text-right`}>
-            {result.stats?.views?.monthChange !== undefined && (
-              <>
-                {result.stats.views.monthChange > 0 ? '+' : ''}
-                {formatNumber(result.stats.views.monthChange)}
-              </>
-            )}
-          </td>
-        );
-      case 'likeCount':
-        return (
-          <td key={col.id} className="px-4 py-4">
-            {formatNumber(result.likeCount as number || 0)}
-          </td>
-        );
-      case 'commentCount':
-        return (
-          <td key={col.id} className="px-4 py-4">
-            {formatNumber(result.commentCount as number || 0)}
-          </td>
-        );
-      case 'channelTitle':
-        return (
-          <td key={col.id} className="px-4 py-4">
-            <Link href={`https://youtube.com/channel/${result.channelId}`} target="_blank" className="text-blue-600 hover:text-blue-800">
-              {result.channelTitle}
-            </Link>
-          </td>
-        );
-      case 'subscriberCount':
-        return (
-          <td key={col.id} className="px-4 py-4">
-            {formatNumber(result.subscriberCount as number || 0)}
-          </td>
-        );
-      case 'weekSubChange':
-        const weeklySubGrowthRate = result.stats?.subscribers?.weekChange 
-          ? result.stats.subscribers.weekChange / result.subscriberCount 
-          : 0;
-        return (
-          <td className={`${col.width} px-4 py-2 text-right ${
-            weeklySubGrowthRate > HIGHLIGHT_CRITERIA.WEEKLY_SUB_GROWTH_RATE
-              ? 'highlight-growing highlight-cell'
-              : ''
-          }`}>
-            {result.stats?.subscribers?.weekChange !== undefined && (
-              <>
-                {result.stats.subscribers.weekChange > 0 ? '+' : ''}
-                {formatNumber(result.stats.subscribers.weekChange)}
-                {weeklySubGrowthRate > HIGHLIGHT_CRITERIA.WEEKLY_SUB_GROWTH_RATE && (
-                  <span className="ml-1 text-xs text-green-600">
-                    ({(weeklySubGrowthRate * 100).toFixed(0)}%↑)
-                  </span>
-                )}
-              </>
-            )}
-          </td>
-        );
-      case 'monthSubChange':
-        return (
-          <td className={`${col.width} px-4 py-2 text-right`}>
-            {result.stats?.subscribers?.monthChange !== undefined && (
-              <>
-                {result.stats.subscribers.monthChange > 0 ? '+' : ''}
-                {formatNumber(result.stats.subscribers.monthChange)}
-              </>
-            )}
-          </td>
-        );
-      case 'topicDetails':
-        return (
-          <td key={col.id} className="px-4 py-4">
-            {renderTopics(result.topicDetails, result.id)}
-          </td>
-        );
-      case 'tags':
-        return (
-          <td key={col.id} className="px-4 py-4">
-            {renderTags(result.tags, result.id)}
-          </td>
-        );
-      case 'videoFormat':
-        return (
-          <td className={`${col.width} px-4 py-2 text-center`}>
-            {result.duration ? (
-              parseDurationToSeconds(result.duration) <= 60 ? (
-                <span className="px-2 py-1 bg-pink-100 text-pink-700 rounded-full text-xs">Shorts</span>
-              ) : (
-                <span className="px-2 py-1 bg-purple-100 text-purple-700 rounded-full text-xs">Long</span>
-              )
-            ) : '-'}
-          </td>
-        );
+        return <span>{formatDuration(result.duration || '')}</span>;
+      case 'views':
+        return <span>{formatNumber(result.viewCount)}</span>;
+      case 'likes':
+        return <span>{formatNumber(result.likeCount)}</span>;
+      case 'comments':
+        return <span>{formatNumber(result.commentCount)}</span>;
       default:
-        return (
-          <td key={col.id} className="px-4 py-4">
-            {String(result[col.id as keyof YouTubeSearchResult] || '-')}
-          </td>
-        );
+        return <span>{String(result[col.field as keyof YouTubeSearchResult] || '')}</span>;
     }
   };
 
-  // 통합된 동영상 컬럼 정의
-  const videoColumns: ColumnDefinition[] = [
-    {
-      id: 'thumbnail',
-      label: '썸네일',
-      width: '100px',
-      sortable: false
-    },
-    {
-      id: 'videoFormat',
-      label: '형식',
-      width: '100px',
-      sortable: false
-    },
-    {
-      id: 'title',
-      label: '제목',
-      width: '300px',
-      sortable: true,
-      path: ['title']
-    },
-    {
-      id: 'description',
-      label: '설명',
-      width: '300px',
-      sortable: false
-    },
-    {
-      id: 'publishedAt',
-      label: '게시일',
-      width: '150px',
-      sortable: true,
-      path: ['publishedAt']
-    },
-    {
-      id: 'duration',
-      label: '길이',
-      width: '80px',
-      sortable: true,
-      path: ['duration']
-    },
-    {
-      id: 'viewCount',
-      label: '조회수',
-      width: '100px',
-      sortable: true,
-      path: ['viewCount']
-    },
-    {
-      id: 'weekViewChange',
-      label: '1주일 조회수 변화',
-      width: '150px',
-      sortable: true,
-      path: ['stats', 'views', 'weekChange']
-    },
-    {
-      id: 'monthViewChange',
-      label: '1달 조회수 변화',
-      width: '150px',
-      sortable: true,
-      path: ['stats', 'views', 'monthChange']
-    },
-    {
-      id: 'likeCount',
-      label: '좋아요',
-      width: '100px',
-      sortable: true,
-      path: ['likeCount']
-    },
-    {
-      id: 'commentCount',
-      label: '댓글',
-      width: '100px',
-      sortable: true,
-      path: ['commentCount']
-    },
-    {
-      id: 'channelTitle',
-      label: '채널명',
-      width: '200px',
-      sortable: true,
-      path: ['channelTitle']
-    },
-    {
-      id: 'subscriberCount',
-      label: '구독자수',
-      width: '120px',
-      sortable: true,
-      path: ['subscriberCount']
-    },
-    {
-      id: 'weekSubChange',
-      label: '1주일 구독자 변화',
-      width: '150px',
-      sortable: true,
-      path: ['stats', 'subscribers', 'weekChange']
-    },
-    {
-      id: 'monthSubChange',
-      label: '1달 구독자 변화',
-      width: '150px',
-      sortable: true,
-      path: ['stats', 'subscribers', 'monthChange']
-    }
-  ];
-
-  // 콘텐츠 타입에 따른 컬럼 선택
-  const columns = videoColumns;
-
-  // 테이블 너비 계산
-  const tableWidth = columns.reduce((acc, col) => {
-    const width = parseInt(col.width);
-    return acc + (isNaN(width) ? 100 : width);
-  }, 0);
-
-  // 스크롤 동기화 함수 추가
-  useEffect(() => {
-    const handleScroll = () => {
-      if (scrollContainerRef.current) {
-        const scrollLeft = scrollContainerRef.current.scrollLeft;
-        const headerTable = document.querySelector('.header-table');
-        if (headerTable) {
-          (headerTable as HTMLElement).style.transform = `translateX(-${scrollLeft}px)`;
-        }
-      }
-    };
-
-    const scrollContainer = scrollContainerRef.current;
-    if (scrollContainer) {
-      scrollContainer.addEventListener('scroll', handleScroll);
-    }
-
-    return () => {
-      if (scrollContainer) {
-        scrollContainer.removeEventListener('scroll', handleScroll);
-      }
-    };
-  }, []);
-
   return (
-    <div className="overflow-hidden" ref={tableRef}>
-      {renderFilters()}
-      
-      {/* 페이지당 항목 수 선택 */}
-      <div className="flex justify-center items-center mb-4">
-        {renderItemsPerPageSelector()}
-      </div>
-      
-      <div className="relative">
-        {/* 테이블 헤더 (고정) */}
-        <div className="sticky top-0 z-30 bg-gradient-to-r from-pink-50 to-purple-50 shadow-md border-b border-pink-100">
-          <div className="header-table" style={{ width: `${tableWidth}px`, minWidth: '100%' }}>
-            <table className="w-full" style={{ tableLayout: 'fixed' }}>
-              <colgroup>
-                {columns.map(col => (
-                  <col key={col.id} style={{ width: col.width }} />
-                ))}
-              </colgroup>
-              <thead>
-                <tr className="border-b border-pink-100">
-                  {columns.map(col => (
-                    <th 
-                      key={col.id}
-                      className={`px-6 py-5 text-left text-sm font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap ${
-                        col.sortable ? 'cursor-pointer hover:bg-pink-50/50' : ''
-                      }`}
-                      onClick={() => col.sortable && col.path && handleSort(col.id, col.path)}
-                    >
-                      <div className="flex items-center">
-                        {col.label}
-                        {col.sortable && col.path && renderSortIcon(col.id)}
-                      </div>
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-            </table>
-          </div>
-        </div>
-        
-        {/* 테이블 본문 (스크롤 가능) */}
-        <div 
-          className="overflow-x-auto"
-          ref={scrollContainerRef}
-          style={{ maxHeight: 'calc(100vh - 300px)' }}
-        >
-          <div style={{ width: `${tableWidth}px`, minWidth: '100%' }}>
-            <table className="w-full" style={{ tableLayout: 'fixed' }}>
-              <colgroup>
-                {columns.map(col => (
-                  <col key={col.id} style={{ width: col.width }} />
-                ))}
-              </colgroup>
-              <tbody>
-                {displayedResults.length > 0 ? (
-                  displayedResults.map((result, index) => (
-                  <tr 
-                      key={`${result.id}-${index}`}
-                    className={`hover:bg-pink-50 transition-colors duration-200 ${index % 2 === 0 ? 'bg-white' : 'bg-pink-50/30'}`}
-                  >
-                      {columns.map(col => renderCell(col, result))}
-            </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan={columns.length} className="px-6 py-10 text-center text-gray-500">
-                      검색 결과가 없습니다.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-          </div>
-        </div>
-        
-      {/* 페이지네이션 */}
-      {renderPagination()}
-      
-      {/* 로딩 인디케이터 */}
-          {isLoading && (
-        <div className="py-4 text-center">
-          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-pink-400 border-r-transparent"></div>
+    <div className="w-full" ref={tableRef}>
+      {/* 에러 메시지 표시 */}
+      {error && (
+        <div className="mb-4 p-4 bg-red-100 border border-red-400 text-red-700 rounded">
+          {error}
         </div>
       )}
+
+      {/* API 할당량 초과 알림 */}
+      {quotaExceeded && (
+        <div className="mb-4 p-4 bg-yellow-100 border border-yellow-400 text-yellow-700 rounded">
+          <p className="font-bold">YouTube API 할당량 초과</p>
+          <p>현재 YouTube API의 일일 할당량이 소진되었습니다. 내일 다시 시도해주세요.</p>
+        </div>
+      )}
+
+      {/* 필터 및 도구 모음 */}
+      <div className="mb-4 flex flex-wrap justify-between items-center">
+        {renderFilters()}
+        <div className="flex items-center space-x-4">
+          {renderItemsPerPageSelector()}
+          <button
+            onClick={handleExcelDownload}
+            className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
+          >
+            엑셀 다운로드
+          </button>
+        </div>
+      </div>
+
+      {/* 결과 테이블 */}
+      {displayedResults.length > 0 ? (
+        <div className="overflow-x-auto">
+          <table className="min-w-full bg-white">
+            <thead>
+              <tr className="bg-gray-50">
+                {columns.map(col => (
+                  <th
+                    key={col.id}
+                    className={`px-4 py-2 text-left text-sm font-medium text-gray-500 ${col.width}`}
+                  >
+                    {col.sortable ? (
+                      <button
+                        onClick={() => handleSort(col.field || '')}
+                        className="flex items-center space-x-1 hover:text-pink-500"
+                      >
+                        <span>{col.label}</span>
+                        <span>{renderSortIcon(col.field || '')}</span>
+                      </button>
+                    ) : (
+                      col.label
+                    )}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {displayedResults.map(result => (
+                <tr key={result.id} className="border-b hover:bg-gray-50">
+                  {columns.map(col => (
+                    <td key={col.id} className="px-4 py-2">
+                      {renderCell(col, result)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="text-center py-8 text-gray-500">
+          {quotaExceeded ? (
+            <p>API 할당량이 소진되어 검색 결과를 표시할 수 없습니다.</p>
+          ) : error ? (
+            <p>{error}</p>
+          ) : (
+            <p>검색 결과가 없습니다.</p>
+          )}
+        </div>
+      )}
+
+      {/* 페이지네이션 */}
+      {displayedResults.length > 0 && renderPagination()}
+
+      {/* 무한 스크롤 로더 */}
+      <div ref={loadMoreRef} className="h-10" />
     </div>
   );
 } 

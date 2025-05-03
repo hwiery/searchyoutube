@@ -30,7 +30,6 @@ SearchYoutube는 YouTube의 방대한 콘텐츠를 효율적으로 검색하고 
 
 - Node.js 18.0.0 이상
 - YouTube Data API v3 API 키
-- 환경 설정 파일 (.env.local)
 
 ### 환경 설정
 
@@ -49,8 +48,6 @@ npm install
 `.env.local` 파일을 생성하고 다음 변수들을 설정하세요:
 ```
 YOUTUBE_API_KEY=your_api_key_here
-NEXTAUTH_SECRET=your_nextauth_secret
-NEXTAUTH_URL=http://localhost:3000
 ```
 
 4. 개발 서버 실행
@@ -65,12 +62,9 @@ npm run dev
 - YouTube Data API는 일일 할당량이 제한되어 있습니다
 - 기본 무료 할당량: 일일 10,000 units
 - 검색 API 호출당 100 units 사용
-- 사용자당 일일 검색 횟수 제한 있음
 
 ### 검색 제한
 
-- 로그인 필요
-- 사용자당 일일 검색 횟수 제한
 - 검색 결과는 최대 50개까지 표시
 
 ## 주요 기능 사용법
