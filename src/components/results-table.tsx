@@ -11,6 +11,8 @@ interface ResultsTableProps {
   results: YouTubeSearchResult[];
   error?: string;
   quotaExceeded?: boolean;
+  currentPage: number;
+  onPageChange: (page: number) => void;
 }
 
 // 컬럼 정의를 위한 인터페이스 추가
@@ -36,12 +38,11 @@ interface SortField {
   path: string[];
 }
 
-export default function ResultsTable({ results, error, quotaExceeded }: ResultsTableProps) {
+export default function ResultsTable({ results, error, quotaExceeded, currentPage, onPageChange }: ResultsTableProps) {
   const [sortConfig, setSortConfig] = useState<{ field: string; direction: 'asc' | 'desc' }>({
     field: 'publishedAt',
     direction: 'desc'
   });
-  const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
   const [displayedResults, setDisplayedResults] = useState<YouTubeSearchResult[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -101,7 +102,7 @@ export default function ResultsTable({ results, error, quotaExceeded }: ResultsT
       ...prev,
       [type]: value
     }));
-    setCurrentPage(1);
+    onPageChange(1);
     setDisplayedResults([]);
   };
 
@@ -235,29 +236,6 @@ export default function ResultsTable({ results, error, quotaExceeded }: ResultsT
     setTotalPages(Math.ceil(filteredResults.length / itemsPerPage));
   }, [results, filters, sortConfig, currentPage, itemsPerPage]);
 
-  // 무한 스크롤 설정
-  useEffect(() => {
-    if (!loadMoreRef.current) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting && currentPage < totalPages) {
-          setCurrentPage(prev => prev + 1);
-        }
-      },
-      { threshold: 0.1 }
-    );
-
-    observer.observe(loadMoreRef.current);
-    observerRef.current = observer;
-
-    return () => {
-      if (observerRef.current) {
-        observerRef.current.disconnect();
-      }
-    };
-  }, [currentPage, totalPages]);
-
   // 컬럼 정의
   const columns: ColumnDefinition[] = [
     { id: 'thumbnail', width: 'w-48', label: '썸네일', sortable: false },
@@ -284,16 +262,21 @@ export default function ResultsTable({ results, error, quotaExceeded }: ResultsT
 
   // 페이지 변경 핸들러 수정
   const handlePageChange = (page: number) => {
-    if (isPageChanging) return;
+    if (isPageChanging || page === currentPage) return;
     setIsPageChanging(true);
-    setCurrentPage(page);
-    setTimeout(() => setIsPageChanging(false), 100);
+    onPageChange(page);
+    if (tableRef.current) {
+      tableRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+    setTimeout(() => {
+      setIsPageChanging(false);
+    }, 300);
   };
 
   // 페이지당 항목 수 변경 핸들러
   const handleItemsPerPageChange = (count: number) => {
     setItemsPerPage(count);
-    setCurrentPage(1);
+    onPageChange(1);
   };
 
   // 엑셀 다운로드 핸들러
@@ -314,24 +297,15 @@ export default function ResultsTable({ results, error, quotaExceeded }: ResultsT
     XLSX.writeFile(wb, 'youtube_search_results.xlsx');
   };
 
-  // 페이지네이션 렌더링
+  // 페이지네이션 렌더링 수정
   const renderPagination = () => {
     const pages = [];
     const maxPages = 5;
-    
-    let startPage = 1;
-    if (totalPages > maxPages) {
-      if (currentPage <= Math.ceil(maxPages / 2)) {
-        startPage = 1;
-      } else if (currentPage >= totalPages - Math.floor(maxPages / 2)) {
-        startPage = totalPages - maxPages + 1;
-      } else {
-        startPage = currentPage - Math.floor(maxPages / 2);
-      }
+    let startPage = Math.max(1, currentPage - Math.floor(maxPages / 2));
+    let endPage = Math.min(totalPages, startPage + maxPages - 1);
+    if (endPage - startPage + 1 < maxPages) {
+      startPage = Math.max(1, endPage - maxPages + 1);
     }
-    
-    const endPage = Math.min(startPage + maxPages - 1, totalPages);
-
     for (let i = startPage; i <= endPage; i++) {
       pages.push(
         <button
@@ -348,7 +322,6 @@ export default function ResultsTable({ results, error, quotaExceeded }: ResultsT
         </button>
       );
     }
-
     return (
       <div className="flex justify-center items-center space-x-2 mt-4">
         <button
@@ -500,9 +473,10 @@ export default function ResultsTable({ results, error, quotaExceeded }: ResultsT
             <Image
               src={result.thumbnailUrl}
               alt={result.title}
-              width={192}
-              height={108}
-              className="object-cover rounded"
+              width={120}
+              height={90}
+              className="rounded-md object-cover w-[120px] h-[90px]"
+              style={{ width: 'auto', height: 'auto' }}
             />
           </div>
         );
@@ -661,9 +635,6 @@ export default function ResultsTable({ results, error, quotaExceeded }: ResultsT
 
       {/* 페이지네이션 */}
       {displayedResults.length > 0 && renderPagination()}
-
-      {/* 무한 스크롤 로더 */}
-      <div ref={loadMoreRef} className="h-10" />
     </div>
   );
 } 

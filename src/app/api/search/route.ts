@@ -1,7 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth/next';
-import { authOptions } from '@/lib/auth';
-import axios from 'axios';
+import { NextResponse } from 'next/server';
 import { searchYouTube } from '@/lib/youtube';
 
 // 모의 데이터 생성 함수
