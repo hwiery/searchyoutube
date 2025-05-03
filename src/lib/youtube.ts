@@ -196,4 +196,42 @@ export async function searchYouTube(
     console.error('YouTube 검색 오류:', error);
     throw error;
   }
+}
+
+export async function getChannelDetail(channelId: string) {
+  try {
+    if (!YOUTUBE_API_KEY) {
+      throw new Error('YouTube API 키가 설정되지 않았습니다.');
+    }
+
+    const response = await axios.get(`${YOUTUBE_API_BASE_URL}/channels`, {
+      params: {
+        part: 'snippet,statistics,contentDetails',
+        id: channelId,
+        key: YOUTUBE_API_KEY
+      }
+    });
+
+    if (!response.data.items || response.data.items.length === 0) {
+      throw new Error('채널을 찾을 수 없습니다.');
+    }
+
+    const channel = response.data.items[0];
+    return {
+      id: channel.id,
+      title: channel.snippet.title,
+      description: channel.snippet.description,
+      thumbnailUrl: channel.snippet.thumbnails.high.url,
+      subscriberCount: parseInt(channel.statistics.subscriberCount || '0'),
+      viewCount: parseInt(channel.statistics.viewCount || '0'),
+      videoCount: parseInt(channel.statistics.videoCount || '0'),
+      publishedAt: channel.snippet.publishedAt,
+      customUrl: channel.snippet.customUrl,
+      country: channel.snippet.country,
+      uploadsPlaylistId: channel.contentDetails.relatedPlaylists.uploads
+    };
+  } catch (error) {
+    console.error('채널 정보 조회 오류:', error);
+    throw error;
+  }
 } 
