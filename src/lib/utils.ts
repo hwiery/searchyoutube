@@ -2,19 +2,10 @@ import { format, parseISO } from 'date-fns';
 import { ko } from 'date-fns/locale';
 
 /**
- * 숫자를 읽기 쉬운 형식으로 변환합니다 (예: 1000 -> 1K, 1000000 -> 1M)
+ * 숫자를 세 자리마다 쉼표로 구분하여 반환합니다 (예: 1234567 -> 1,234,567)
  */
 export function formatNumber(num: number): string {
-  if (num >= 1000000000) {
-    return (num / 1000000000).toFixed(1).replace(/\.0$/, '') + 'B';
-  }
-  if (num >= 1000000) {
-    return (num / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
-  }
-  if (num >= 1000) {
-    return (num / 1000).toFixed(1).replace(/\.0$/, '') + 'K';
-  }
-  return num.toString();
+  return num.toLocaleString('ko-KR');
 }
 
 /**

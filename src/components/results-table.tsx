@@ -27,10 +27,12 @@ interface ColumnDefinition {
 
 // 필터 상태를 위한 인터페이스 수정
 interface FilterState {
-  uploadDate: string;
-  duration: string;
+  uploadDateStart: string;
+  uploadDateEnd: string;
+  viewCountRange: string;
+  subscriberCountRange: string;
+  highlight: string;
   videoFormat: string;
-  contentType: string;
 }
 
 interface SortField {
@@ -47,10 +49,12 @@ export default function ResultsTable({ results, error, quotaExceeded, currentPag
   const [displayedResults, setDisplayedResults] = useState<YouTubeSearchResult[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [filters, setFilters] = useState<FilterState>({
-    uploadDate: '',
-    duration: '',
-    videoFormat: '',
-    contentType: ''
+    uploadDateStart: '',
+    uploadDateEnd: '',
+    viewCountRange: '',
+    subscriberCountRange: '',
+    highlight: '',
+    videoFormat: ''
   });
   const tableRef = useRef<HTMLDivElement>(null);
   const observerRef = useRef<IntersectionObserver | null>(null);
@@ -63,36 +67,29 @@ export default function ResultsTable({ results, error, quotaExceeded, currentPag
 
   // 필터 옵션 정의 수정
   const filterOptions = {
-    uploadDate: [
+    uploadDate: [], // 직접 입력 방식으로 변경
+    viewCountRange: [
       { value: '', label: '전체' },
-      { value: 'hour', label: '지난 1시간' },
-      { value: 'today', label: '오늘' },
-      { value: 'week', label: '이번 주' },
-      { value: 'month', label: '이번 달' },
-      { value: 'year', label: '올해' }
+      { value: '1000', label: '1,000 이상' },
+      { value: '10000', label: '10,000 이상' },
+      { value: '100000', label: '100,000 이상' }
     ],
-    duration: [
+    subscriberCountRange: [
       { value: '', label: '전체' },
-      { value: '1min', label: '1분 이하' },
-      { value: '5min', label: '5분 이하' },
-      { value: '10min', label: '10분 이하' },
-      { value: '20min', label: '20분 이하' },
-      { value: '30min', label: '30분 이하' },
-      { value: 'over30min', label: '30분 초과' }
+      { value: '1000', label: '1,000 이상' },
+      { value: '10000', label: '10,000 이상' },
+      { value: '100000', label: '100,000 이상' }
+    ],
+    highlight: [
+      { value: '', label: '전체' },
+      { value: 'viral', label: '바이럴' },
+      { value: 'growth', label: '급성장' },
+      { value: 'trending', label: '트렌딩' }
     ],
     videoFormat: [
       { value: '', label: '전체' },
-      { value: 'shorts', label: 'Shorts' },
-      { value: 'long', label: 'Long' }
-    ],
-    contentType: [
-      { value: '', label: '전체' },
-      { value: 'music', label: '음악' },
-      { value: 'gaming', label: '게임' },
-      { value: 'education', label: '교육' },
-      { value: 'entertainment', label: '엔터테인먼트' },
-      { value: 'news', label: '뉴스' },
-      { value: 'tech', label: '기술' }
+      { value: 'shorts', label: '숏폼' },
+      { value: 'long', label: '롱폼' }
     ]
   };
 
@@ -106,54 +103,13 @@ export default function ResultsTable({ results, error, quotaExceeded, currentPag
     setDisplayedResults([]);
   };
 
-  // 날짜 필터링 함수
-  const filterByDate = (date: string, filterValue: string): boolean => {
-    const now = new Date();
+  // 날짜 필터링 함수를 삭제하고 날짜 범위 필터 함수로 대체
+  const filterByDateRange = (date: string, start: string, end: string): boolean => {
+    if (!start && !end) return true;
     const itemDate = new Date(date);
-    
-    switch (filterValue) {
-      case 'hour':
-        return now.getTime() - itemDate.getTime() <= 3600000;
-      case 'today':
-        return itemDate.toDateString() === now.toDateString();
-      case 'week':
-        const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-        return itemDate >= weekAgo;
-      case 'month':
-        return itemDate.getMonth() === now.getMonth() && itemDate.getFullYear() === now.getFullYear();
-      case 'year':
-        return itemDate.getFullYear() === now.getFullYear();
-      default:
-        return true;
-    }
-  };
-
-  // 길이 필터링 함수
-  const filterByDuration = (duration: string, filterValue: string): boolean => {
-    const minutes = parseDurationToMinutes(duration);
-    
-    switch (filterValue) {
-      case 'short':
-        return minutes < 4;
-      case 'medium':
-        return minutes >= 4 && minutes <= 20;
-      case 'long':
-        return minutes > 20;
-      default:
-        return true;
-    }
-  };
-
-  // duration을 분으로 변환하는 함수
-  const parseDurationToMinutes = (duration: string): number => {
-    const matches = duration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
-    if (!matches) return 0;
-    
-    const hours = parseInt(matches[1] || '0');
-    const minutes = parseInt(matches[2] || '0');
-    const seconds = parseInt(matches[3] || '0');
-    
-    return hours * 60 + minutes + seconds / 60;
+    if (start && itemDate < new Date(start)) return false;
+    if (end && itemDate > new Date(end + "T23:59:59")) return false;
+    return true;
   };
 
   // 동영상 형식 확인 함수 수정
@@ -185,46 +141,155 @@ export default function ResultsTable({ results, error, quotaExceeded, currentPag
   useEffect(() => {
     if (!results.length) return;
 
+    // 원본 결과 복사
     let filteredResults = [...results];
 
-    // 필터 적용
-    if (filters.uploadDate) {
-      filteredResults = filteredResults.filter(result => 
-        filterByDate(result.publishedAt, filters.uploadDate)
+    // 업로드 날짜 필터 적용
+    if (filters.uploadDateStart || filters.uploadDateEnd) {
+      filteredResults = filteredResults.filter(result =>
+        filterByDateRange(result.publishedAt, filters.uploadDateStart, filters.uploadDateEnd)
       );
     }
 
-    if (filters.duration && filteredResults[0]?.duration) {
-      filteredResults = filteredResults.filter(result => 
-        filterByDuration(result.duration!, filters.duration)
-      );
-    }
-
-    if (filters.videoFormat) {
+    // 조회수 필터 적용
+    if (filters.viewCountRange) {
+      let min = 0;
+      let max = Infinity;
+      
+      switch (filters.viewCountRange) {
+        case '1000':
+          min = 0;
+          max = 1000;
+          break;
+        case '10000':
+          min = 1001;
+          max = 10000;
+          break;
+        case '100000':
+          min = 10001;
+          max = 100000;
+          break;
+        case '100001-':
+          min = 100001;
+          break;
+      }
+      
       filteredResults = filteredResults.filter(result => {
-        const format = getVideoFormat(result);
-        return format.format === filters.videoFormat;
+        const viewCount = Number(result.viewCount) || 0;
+        return viewCount >= min && viewCount <= max;
       });
     }
 
-    // 정렬 적용
-    filteredResults.sort((a, b) => {
-      const aValue = a[sortConfig.field as keyof YouTubeSearchResult];
-      const bValue = b[sortConfig.field as keyof YouTubeSearchResult];
+    // 구독자수 필터 적용
+    if (filters.subscriberCountRange) {
+      let min = 0;
+      let max = Infinity;
+      
+      switch (filters.subscriberCountRange) {
+        case '1000':
+          min = 0;
+          max = 1000;
+          break;
+        case '10000':
+          min = 1001;
+          max = 10000;
+          break;
+        case '100000':
+          min = 10001;
+          max = 100000;
+          break;
+        case '100001-':
+          min = 100001;
+          break;
+      }
+      
+      filteredResults = filteredResults.filter(result => {
+        const subscriberCount = Number(result.subscriberCount) || 0;
+        return subscriberCount >= min && subscriberCount <= max;
+      });
+    }
 
+    // 하이라이트 필터 적용
+    if (filters.highlight) {
+      filteredResults = filteredResults.filter(result => {
+        const subscriberCount = Number(result.subscriberCount) || 0;
+        const viewCount = Number(result.viewCount) || 0;
+        const now = new Date();
+        const publishedAt = new Date(result.publishedAt);
+        const daysSincePublished = Math.floor((now.getTime() - publishedAt.getTime()) / (1000 * 60 * 60 * 24));
+        
+        switch (filters.highlight) {
+          case 'viral':
+            // 바이럴: 구독자 수 대비 조회수가 3배 이상
+            return subscriberCount > 0 && viewCount >= subscriberCount * 3;
+          
+          case 'growth':
+            // 급성장: 최근 한 달 내 업로드된 영상 중 구독자수 1,000 이상
+            return daysSincePublished <= 30 && subscriberCount >= 1000;
+          
+          case 'trending':
+            // 트렌딩: 최근 1주일 내 업로드 & 조회수 1만 이상
+            return daysSincePublished <= 7 && viewCount >= 10000;
+            
+          default:
+            return true;
+        }
+      });
+    }
+
+    // 영상 형식 필터 적용
+    if (filters.videoFormat) {
+      filteredResults = filteredResults.filter(result => {
+        const format = result.videoFormat || getVideoFormat(result).format;
+        return filters.videoFormat === '' || format === filters.videoFormat;
+      });
+    }
+
+    // 정렬 적용 로직 수정
+    filteredResults.sort((a, b) => {
+      let aValue: any;
+      let bValue: any;
+
+      // 숫자 컬럼의 경우 명시적으로 Number로 변환하여 정렬
+      switch (sortConfig.field) {
+        case 'subscriberCount':
+          aValue = Number(a.subscriberCount) || 0;
+          bValue = Number(b.subscriberCount) || 0;
+          break;
+        case 'viewCount':
+          aValue = Number(a.viewCount) || 0;
+          bValue = Number(b.viewCount) || 0;
+          break;
+        case 'likeCount':
+          aValue = Number(a.likeCount) || 0;
+          bValue = Number(b.likeCount) || 0;
+          break;
+        case 'commentCount':
+          aValue = Number(a.commentCount) || 0;
+          bValue = Number(b.commentCount) || 0;
+          break;
+        case 'publishedAt':
+          // 날짜는 타임스탬프로 변환하여 정렬
+          aValue = new Date(a.publishedAt).getTime();
+          bValue = new Date(b.publishedAt).getTime();
+          break;
+        default:
+          // 그 외 필드는 원래 값 사용
+          aValue = a[sortConfig.field as keyof YouTubeSearchResult];
+          bValue = b[sortConfig.field as keyof YouTubeSearchResult];
+      }
+
+      // 문자열인 경우 localeCompare로 정렬
       if (typeof aValue === 'string' && typeof bValue === 'string') {
         return sortConfig.direction === 'asc' 
           ? aValue.localeCompare(bValue)
           : bValue.localeCompare(aValue);
       }
 
-      if (typeof aValue === 'number' && typeof bValue === 'number') {
-        return sortConfig.direction === 'asc'
-          ? aValue - bValue
-          : bValue - aValue;
-      }
-
-      return 0;
+      // 숫자나 날짜의 경우 단순 뺄셈으로 정렬
+      return sortConfig.direction === 'asc'
+        ? aValue - bValue
+        : bValue - aValue;
     });
 
     // 페이지네이션 적용
@@ -239,15 +304,11 @@ export default function ResultsTable({ results, error, quotaExceeded, currentPag
   // 컬럼 정의
   const columns: ColumnDefinition[] = [
     { id: 'thumbnail', width: 'w-48', label: '썸네일', sortable: false },
-    { id: 'videoFormat', width: 'w-24', label: '형식', sortable: true, field: 'videoFormat' },
     { id: 'title', width: 'w-96', label: '제목', sortable: true, field: 'title' },
     { id: 'channel', width: 'w-48', label: '채널', sortable: true, field: 'channelTitle' },
     { id: 'subscribers', width: 'w-32', label: '구독자', sortable: true, field: 'subscriberCount' },
-    { id: 'subChange', width: 'w-48', label: '구독자 변화', sortable: true, path: ['stats', 'subscribers'] },
     { id: 'publishedAt', width: 'w-32', label: '업로드', sortable: true, field: 'publishedAt' },
-    { id: 'duration', width: 'w-24', label: '길이', sortable: true, field: 'duration' },
     { id: 'views', width: 'w-32', label: '조회수', sortable: true, field: 'viewCount' },
-    { id: 'viewChange', width: 'w-48', label: '조회수 변화', sortable: true, path: ['stats', 'views'] },
     { id: 'likes', width: 'w-32', label: '좋아요', sortable: true, field: 'likeCount' },
     { id: 'comments', width: 'w-32', label: '댓글', sortable: true, field: 'commentCount' }
   ];
@@ -286,9 +347,9 @@ export default function ResultsTable({ results, error, quotaExceeded, currentPag
       채널: result.channelTitle,
       업로드일: formatDate(result.publishedAt),
       길이: formatDuration(result.duration || ''),
-      조회수: formatNumber(result.viewCount),
-      좋아요: formatNumber(result.likeCount),
-      댓글수: formatNumber(result.commentCount)
+      조회수: formatNumber(result.viewCount || 0),
+      좋아요: formatNumber(result.likeCount || 0),
+      댓글수: formatNumber(result.commentCount || 0)
     }));
 
     const ws = XLSX.utils.json_to_sheet(data);
@@ -391,31 +452,46 @@ export default function ResultsTable({ results, error, quotaExceeded, currentPag
     return (
       <div className="bg-white p-4 rounded-lg shadow-sm mb-6">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {Object.entries(filterOptions).map(([key, options]) => (
-            <div key={key} className="space-y-2">
-              <label className="block text-sm font-medium text-gray-700">
-                {key === 'uploadDate' ? '업로드 날짜' :
-                 key === 'duration' ? '영상 길이' :
-                 key === 'videoFormat' ? '영상 형식' :
-                 '콘텐츠 유형'}
-              </label>
-              <div className="flex flex-wrap gap-2">
-                {options.map(option => (
-                  <button
-                    key={option.value}
-                    onClick={() => handleFilterChange(key as keyof FilterState, option.value)}
-                    className={`px-3 py-1 rounded-full text-sm transition-colors ${
-                      filters[key as keyof FilterState] === option.value
-                        ? 'bg-pink-500 text-white'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    }`}
-                  >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-gray-700">업로드 날짜</label>
+            <div className="flex gap-2 items-center">
+              <input type="date" value={filters.uploadDateStart} onChange={e => handleFilterChange('uploadDateStart', e.target.value)} className="border rounded px-2 py-1 text-sm" />
+              <span>~</span>
+              <input type="date" value={filters.uploadDateEnd} onChange={e => handleFilterChange('uploadDateEnd', e.target.value)} className="border rounded px-2 py-1 text-sm" />
             </div>
-          ))}
+          </div>
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-gray-700">조회수</label>
+            <div className="flex flex-wrap gap-2">
+              {filterOptions.viewCountRange.map(option => (
+                <button key={option.value} onClick={() => handleFilterChange('viewCountRange', option.value)} className={`px-3 py-1 rounded-full text-sm transition-colors ${filters.viewCountRange === option.value ? 'bg-pink-500 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>{option.label}</button>
+              ))}
+            </div>
+          </div>
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-gray-700">구독자 수</label>
+            <div className="flex flex-wrap gap-2">
+              {filterOptions.subscriberCountRange.map(option => (
+                <button key={option.value} onClick={() => handleFilterChange('subscriberCountRange', option.value)} className={`px-3 py-1 rounded-full text-sm transition-colors ${filters.subscriberCountRange === option.value ? 'bg-pink-500 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>{option.label}</button>
+              ))}
+            </div>
+          </div>
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-gray-700">하이라이트</label>
+            <div className="flex flex-wrap gap-2">
+              {filterOptions.highlight.map(option => (
+                <button key={option.value} onClick={() => handleFilterChange('highlight', option.value)} className={`px-3 py-1 rounded-full text-sm transition-colors ${filters.highlight === option.value ? 'bg-pink-500 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>{option.label}</button>
+              ))}
+            </div>
+          </div>
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-gray-700">영상 형식</label>
+            <div className="flex flex-wrap gap-2">
+              {filterOptions.videoFormat.map(option => (
+                <button key={option.value} onClick={() => handleFilterChange('videoFormat', option.value)} className={`px-3 py-1 rounded-full text-sm transition-colors ${filters.videoFormat === option.value ? 'bg-pink-500 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>{option.label}</button>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -480,37 +556,6 @@ export default function ResultsTable({ results, error, quotaExceeded, currentPag
             />
           </div>
         );
-      case 'videoFormat':
-        const format = getVideoFormat(result);
-        return (
-          <span className={`px-2 py-1 rounded-full text-xs ${
-            format.format === 'shorts' ? 'bg-pink-100 text-pink-800' : 'bg-blue-100 text-blue-800'
-          }`}>
-            {format.label}
-          </span>
-        );
-      case 'subChange':
-        return (
-          <div className="space-y-1">
-            <div className="text-xs">
-              <span className="text-green-600">주간: {formatNumber(result.stats?.subscribers?.weekChange || 0)}</span>
-            </div>
-            <div className="text-xs">
-              <span className="text-blue-600">월간: {formatNumber(result.stats?.subscribers?.monthChange || 0)}</span>
-            </div>
-          </div>
-        );
-      case 'viewChange':
-        return (
-          <div className="space-y-1">
-            <div className="text-xs">
-              <span className="text-green-600">주간: {formatNumber(result.stats?.views?.weekChange || 0)}</span>
-            </div>
-            <div className="text-xs">
-              <span className="text-blue-600">월간: {formatNumber(result.stats?.views?.monthChange || 0)}</span>
-            </div>
-          </div>
-        );
       case 'title':
         return (
           <div className="flex flex-col">
@@ -538,14 +583,14 @@ export default function ResultsTable({ results, error, quotaExceeded, currentPag
         );
       case 'publishedAt':
         return <span>{formatDate(result.publishedAt)}</span>;
-      case 'duration':
-        return <span>{formatDuration(result.duration || '')}</span>;
+      case 'subscribers':
+        return <span>{formatNumber(Number(result.subscriberCount) || 0)}</span>;
       case 'views':
-        return <span>{formatNumber(result.viewCount)}</span>;
+        return <span>{formatNumber(Number(result.viewCount) || 0)}</span>;
       case 'likes':
-        return <span>{formatNumber(result.likeCount)}</span>;
+        return <span>{formatNumber(Number(result.likeCount) || 0)}</span>;
       case 'comments':
-        return <span>{formatNumber(result.commentCount)}</span>;
+        return <span>{formatNumber(Number(result.commentCount) || 0)}</span>;
       default:
         return <span>{String(result[col.field as keyof YouTubeSearchResult] || '')}</span>;
     }
@@ -595,11 +640,11 @@ export default function ResultsTable({ results, error, quotaExceeded, currentPag
                   >
                     {col.sortable ? (
                       <button
-                        onClick={() => handleSort(col.field || '')}
+                        onClick={() => handleSort(col.field || col.id)}
                         className="flex items-center space-x-1 hover:text-pink-500"
                       >
                         <span>{col.label}</span>
-                        <span>{renderSortIcon(col.field || '')}</span>
+                        <span>{renderSortIcon(col.field || col.id)}</span>
                       </button>
                     ) : (
                       col.label
